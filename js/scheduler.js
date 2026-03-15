@@ -19,7 +19,7 @@ export function getActiveNotes(allNotes, currentTime) {
   const active = [];
   for (let i = lo - 1; i >= 0; i--) {
     const n = allNotes[i];
-    if (n.time + n.duration <= currentTime) break; // all earlier ones are also done
+    if (n.time + n.duration <= currentTime) continue; // this note finished; earlier ones may still sound
     if (n.time <= currentTime) active.push(n);
   }
   return active;
