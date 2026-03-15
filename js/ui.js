@@ -15,6 +15,7 @@ export function setupUI({
   onRenderMode,
   onTilt,
   onHyperbolic,
+  onColorMode,
   onSyncMeasureToggle,
   onVisualLead,
 }) {
@@ -92,6 +93,13 @@ export function setupUI({
     const v = Number(tiltSlider.value);
     tiltDisplay.textContent = v > 0 ? `+${v.toFixed(1)}` : v.toFixed(1);
     onTilt(v);
+  });
+
+  const btnColor = document.getElementById('btn-color');
+  btnColor.addEventListener('click', () => {
+    const active = onColorMode();
+    btnColor.textContent = active ? 'Color: ON' : 'Color: OFF';
+    btnColor.classList.toggle('active', active);
   });
 
   const btnHyp = document.getElementById('btn-hyp');

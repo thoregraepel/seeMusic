@@ -19,6 +19,7 @@ const state = {
   superMode:    'sum',  // 'sum' | 'product' | 'max'
   renderMode:   'circles', // 'circles' | 'grid'
   hyperbolic:   false,
+  colorMode:    false,
   tilt:         0,     // spectral tilt: >0 boosts highs, <0 boosts lows
   syncMeasure:  false,     // audio-visual sync measurement mode
   visualLeadMs: 22,        // ms to read ahead for note selection (compensates display lag)
@@ -72,6 +73,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     onRenderMode:   v => { state.renderMode  = v; },
     onTilt:         v => { state.tilt        = v; },
     onHyperbolic:   () => { state.hyperbolic = !state.hyperbolic; return state.hyperbolic; },
+    onColorMode:    () => { state.colorMode  = !state.colorMode;  return state.colorMode;  },
     onSyncMeasureToggle:  () => {
       state.syncMeasure = !state.syncMeasure;
       if (state.syncMeasure) { syncRenders.length = 0; }
@@ -190,6 +192,7 @@ function startRaf() {
       superMode:   state.superMode,
       renderMode:  state.renderMode,
       hyperbolic:  state.hyperbolic,
+      colorMode:   state.colorMode,
       tilt:        state.tilt,
     });
 
