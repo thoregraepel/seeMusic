@@ -84,7 +84,7 @@ function superpose(waveVals, amps, mode) {
 
 let _lastHyp;
 export function render(activeNotes, opts) {
-  const { showVisual, sfScale, waveform, superMode, renderMode, hyperbolic } = opts;
+  const { showVisual, sfScale, waveform, superMode, renderMode, hyperbolic, tilt } = opts;
   if (hyperbolic !== _lastHyp) { console.log('[render] hyperbolic=', hyperbolic); _lastHyp = hyperbolic; }
   const W = canvas.width;
   const H = canvas.height;
@@ -104,7 +104,7 @@ export function render(activeNotes, opts) {
   const N = activeNotes.length;
 
   const sfs = activeNotes.map(n => sfScale * SF_REF * Math.pow(2, (n.midi - MIDI_REF) / 12));
-  const amps = activeNotes.map(n => n.velocity);
+  const amps = activeNotes.map(n => Math.min(1, n.velocity * Math.pow(2, tilt * (n.midi - MIDI_REF) / 12)));
 
   const imageData = ctx.createImageData(W, H);
   const data = imageData.data;

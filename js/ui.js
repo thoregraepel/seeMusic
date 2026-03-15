@@ -13,6 +13,7 @@ export function setupUI({
   onWaveform,
   onSuperMode,
   onRenderMode,
+  onTilt,
   onHyperbolic,
   onSyncMeasureToggle,
   onVisualLead,
@@ -84,6 +85,14 @@ export function setupUI({
   waveformSelect.addEventListener('change', () => onWaveform(waveformSelect.value));
   superSelect.addEventListener('change',    () => onSuperMode(superSelect.value));
   document.getElementById('render-mode-select').addEventListener('change', e => onRenderMode(e.target.value));
+
+  const tiltSlider  = document.getElementById('tilt');
+  const tiltDisplay = document.getElementById('tilt-display');
+  tiltSlider.addEventListener('input', () => {
+    const v = Number(tiltSlider.value);
+    tiltDisplay.textContent = v > 0 ? `+${v.toFixed(1)}` : v.toFixed(1);
+    onTilt(v);
+  });
 
   const btnHyp = document.getElementById('btn-hyp');
   btnHyp.addEventListener('click', () => {
