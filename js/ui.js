@@ -140,6 +140,18 @@ export function setupUI({
     btnFullscreen.classList.toggle('active', isFs);
   });
 
+  // About modal
+  const aboutModal = document.getElementById('about-modal');
+  document.getElementById('btn-about').addEventListener('click', () => {
+    aboutModal.classList.add('visible');
+  });
+  document.getElementById('about-close').addEventListener('click', () => {
+    aboutModal.classList.remove('visible');
+  });
+  aboutModal.addEventListener('click', (e) => {
+    if (e.target === aboutModal) aboutModal.classList.remove('visible');
+  });
+
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
@@ -171,6 +183,14 @@ export function setupUI({
     },
     setPlayButton(label) {
       btnPlay.textContent = label;
+    },
+    setColorMode(active) {
+      btnColor.textContent = active ? 'Color: ON' : 'Color: OFF';
+      btnColor.classList.toggle('active', active);
+    },
+    setHyperbolic(active) {
+      btnHyp.textContent = active ? 'Hyp: ON' : 'Hyp: OFF';
+      btnHyp.classList.toggle('active', active);
     },
   };
 }

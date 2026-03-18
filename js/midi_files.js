@@ -1,10 +1,14 @@
 // MIDI file registry and binary generators
 
 export const MIDI_FILES = [
-  { name: 'C Major Scale (test)',      type: 'generated', generator: 'scale'    },
-  { name: 'I–IV–V–I Chords (test)',   type: 'generated', generator: 'chords'   },
-  { name: 'Chromatic Scale (test)',    type: 'generated', generator: 'chromatic' },
-  { name: 'Drone + Melody (test)',     type: 'generated', generator: 'drone'    },
+  { name: 'Bach – Toccata & Fugue BWV 565', type: 'file', path: 'midi/Bach-Toccata_Fugue_BWV-565.mid' },
+  { name: 'Mike Oldfield – Tubular Bells',  type: 'file', path: 'midi/M.OLDFIELD. Tubular bells.mid'  },
+  { name: 'The Beatles – Yesterday',        type: 'file', path: 'midi/THE BEATLES-Yesterday.mid'       },
+  { name: 'Scott Joplin – The Entertainer', type: 'file', path: 'midi/The_Entertainer.mid'             },
+  { name: 'C Major Scale (test)',            type: 'generated', generator: 'scale'     },
+  { name: 'I–IV–V–I Chords (test)',         type: 'generated', generator: 'chords'    },
+  { name: 'Chromatic Scale (test)',          type: 'generated', generator: 'chromatic' },
+  { name: 'Drone + Melody (test)',           type: 'generated', generator: 'drone'     },
 ];
 
 // ── Binary MIDI helpers ───────────────────────────────────────────────────────

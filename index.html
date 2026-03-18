@@ -13,7 +13,29 @@
   <div id="overlay">
     <div id="overlay-content">
       <h2>seeMusic</h2>
-      <p>Click to start audio</p>
+      <p>Click anywhere to start</p>
+      <button id="btn-demo">▶ Demo</button>
+    </div>
+  </div>
+
+  <div id="about-modal" role="dialog" aria-modal="true" aria-label="About seeMusic">
+    <div id="about-content">
+      <button id="about-close" aria-label="Close">✕</button>
+      <h2>About seeMusic</h2>
+      <p>seeMusic was created by <strong>Thore Graepel</strong> and <strong>Claude</strong> (Anthropic's AI assistant) to make music visible.</p>
+      <h3>What it does</h3>
+      <p>seeMusic renders MIDI music as live visual interference patterns. Each playing note becomes a spatial grating — a pattern of stripes whose spatial frequency corresponds to the note's pitch. When multiple notes sound simultaneously their gratings superimpose, creating complex interference patterns just as waves of light or water do.</p>
+      <h3>How it works</h3>
+      <ul>
+        <li>Each note's pitch sets its grating frequency: higher notes produce finer stripes.</li>
+        <li>In <strong>colour mode</strong> each pitch class maps to a hue (C&nbsp;=&nbsp;red, +30° per semitone around the colour wheel), so harmony and melody become immediately visible as colour and pattern.</li>
+        <li><strong>Hyperbolic mode</strong> warps the display geometry with a tanh mapping, creating a Poincaré-disk-like distortion at the boundaries.</li>
+        <li>The <strong>waveform</strong> selector changes the grating profile: sine, square, triangle, or sawtooth.</li>
+        <li><strong>Superposition</strong> controls how multiple gratings combine: sum, product, or max.</li>
+        <li><strong>Spectral tilt</strong> weights amplitudes by pitch, emphasising highs or lows.</li>
+      </ul>
+      <h3>Keyboard shortcuts</h3>
+      <p><kbd>Space</kbd> Play / Pause &nbsp;·&nbsp; <kbd>A</kbd> Toggle audio &nbsp;·&nbsp; <kbd>V</kbd> Toggle visual &nbsp;·&nbsp; <kbd>F</kbd> Fullscreen</p>
     </div>
   </div>
 
@@ -37,6 +59,7 @@
           <button id="btn-hyp" class="toggle">Hyp: OFF</button>
           <button id="btn-sync" class="toggle">Sync: OFF</button>
           <button id="btn-fullscreen" class="toggle">⛶ Fullscreen</button>
+          <button id="btn-about">? About</button>
         </div>
       </div>
       <div id="header-row2">

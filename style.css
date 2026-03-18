@@ -43,6 +43,106 @@ body {
 #overlay-content p {
   font-size: 1.1rem;
   color: var(--text);
+  margin-bottom: 1.2rem;
+}
+
+#btn-demo {
+  font-size: 1.1rem;
+  padding: 10px 32px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  transition: background 0.15s, transform 0.1s;
+}
+
+#btn-demo:hover {
+  background: #2a6fd4;
+  transform: scale(1.04);
+}
+
+/* ── About modal ─────────────────────────────────────────────────────────── */
+#about-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+#about-modal.visible {
+  display: flex;
+}
+
+#about-content {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 28px 32px;
+  max-width: 580px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  position: relative;
+  color: var(--text);
+  line-height: 1.65;
+}
+
+#about-content h2 {
+  font-size: 1.5rem;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+
+#about-content h3 {
+  font-size: 1rem;
+  color: var(--accent);
+  margin-top: 16px;
+  margin-bottom: 6px;
+}
+
+#about-content p {
+  margin-bottom: 8px;
+}
+
+#about-content ul {
+  padding-left: 20px;
+}
+
+#about-content li {
+  margin-bottom: 6px;
+}
+
+#about-content kbd {
+  background: #333;
+  border: 1px solid #555;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 12px;
+  font-family: 'Consolas', 'Menlo', monospace;
+}
+
+#about-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+#about-close:hover {
+  color: var(--text);
+  background: none;
 }
 
 #app {
