@@ -57,6 +57,7 @@ body {
   font-weight: 600;
   letter-spacing: 0.04em;
   transition: background 0.15s, transform 0.1s;
+  pointer-events: auto;
 }
 
 #btn-demo:hover {
