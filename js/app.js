@@ -96,21 +96,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Demo button: load Bach, colour on, hyperbolic off, fullscreen, autoplay
   document.getElementById('btn-demo').addEventListener('click', async (e) => {
     e.stopPropagation();
+    // Fullscreen must be requested synchronously within the user gesture
+    document.documentElement.requestFullscreen().catch(() => {});
     await audio.initAudio();
     state.audioReady = true;
     overlay.style.display = 'none';
+    // Enable colour mode and ensure hyperbolic is off before loading
+    state.colorMode = true;
+    state.hyperbolic = false;
+    ui.setColorMode(true);
+    ui.setHyperbolic(false);
     const bachFile = MIDI_FILES.find(f => f.path && f.path.includes('Bach'));
     await loadAndSchedule(bachFile);
     startRaf();
-    if (!state.colorMode) {
-      state.colorMode = true;
-      ui.setColorMode(true);
-    }
-    if (state.hyperbolic) {
-      state.hyperbolic = false;
-      ui.setHyperbolic(false);
-    }
-    document.documentElement.requestFullscreen().catch(() => {});
     audio.play();
     ui.setPlayButton('⏸ Pause');
   });
