@@ -7,22 +7,24 @@ import { setupUI } from './ui.js';
 
 // ── App state ─────────────────────────────────────────────────────────────────
 const state = {
-  allNotes:    [],
-  tonicMidi:   60,
-  duration:    0,
-  keyName:     'C major (default)',
-  showAudio:    true,
-  showVisual:   true,
-  audioReady:   false,
-  sfScale:      1.0,    // spatial frequency multiplier (set from slider)
-  waveform:     'sine', // 'sine' | 'square' | 'triangle' | 'sawtooth'
-  superMode:    'sum',  // 'sum' | 'product' | 'max'
-  renderMode:   'circles', // 'circles' | 'grid'
-  hyperbolic:   false,
-  colorMode:    false,
-  tilt:         0,     // spectral tilt: >0 boosts highs, <0 boosts lows
-  syncMeasure:  false,     // audio-visual sync measurement mode
-  visualLeadMs: 22,        // ms to read ahead for note selection (compensates display lag)
+  allNotes:         [],
+  tonicMidi:        60,
+  duration:         0,
+  originalDuration: 0,
+  keyName:          'C major (default)',
+  showAudio:        true,
+  showVisual:       true,
+  audioReady:       false,
+  sfScale:          1.0,      // spatial frequency multiplier (set from slider)
+  waveform:         'sine',   // 'sine' | 'square' | 'triangle' | 'sawtooth'
+  superMode:        'sum',    // 'sum' | 'product' | 'max'
+  renderMode:       'circles', // 'circles' | 'grid'
+  hyperbolic:       false,
+  colorMode:        false,
+  tilt:             0,        // spectral tilt: >0 boosts highs, <0 boosts lows
+  tempoScale:       1.0,      // playback speed multiplier (0.5–2.0)
+  syncMeasure:      false,    // audio-visual sync measurement mode
+  visualLeadMs:     22,       // ms to read ahead for note selection (compensates display lag)
 };
 
 // ── Sync measurement state ────────────────────────────────────────────────────
@@ -80,6 +82,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       return state.syncMeasure;
     },
     onVisualLead: ms => { state.visualLeadMs = ms; },
+    onTempoScale: scale => {
+      state.tempoScale = scale;
+      state.duration   = state.originalDuration / scale;
+      if (state.audioReady) {
+        scheduleWithTempo();
+        ui.setPlayButton('▶ Play');
+      }
+      ui.setProgress(0, state.duration);
+      ui.setTimeDisplay(0, state.duration);
+    },
   });
 
   // Dismiss overlay on click / interaction → starts audio context
@@ -116,6 +128,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   startRaf();
 });
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function scheduleWithTempo() {
+  const s = state.tempoScale;
+  const scaled = state.allNotes.map(n => ({ ...n, time: n.time / s, duration: n.duration / s }));
+  audio.scheduleNotes(scaled);
+}
+
 // ── Load & schedule ───────────────────────────────────────────────────────────
 async function loadAndSchedule(descriptor) {
   let buf;
@@ -140,17 +159,18 @@ async function loadAndSchedule(descriptor) {
     return;
   }
 
-  state.allNotes  = parsed.allNotes;
-  state.tonicMidi = parsed.tonicMidi;
-  state.duration  = parsed.duration;
-  state.keyName   = parsed.keyName;
+  state.allNotes        = parsed.allNotes;
+  state.tonicMidi       = parsed.tonicMidi;
+  state.originalDuration = parsed.duration;
+  state.duration        = parsed.duration / state.tempoScale;
+  state.keyName         = parsed.keyName;
 
   ui.setKeyDisplay(state.keyName);
   ui.setProgress(0, state.duration);
   ui.setTimeDisplay(0, state.duration);
 
   if (state.audioReady) {
-    audio.scheduleNotes(state.allNotes);
+    scheduleWithTempo();
   }
   ui.setPlayButton('▶ Play');
 }
@@ -194,10 +214,11 @@ function startRaf() {
       ui.setTimeDisplay(t, state.duration);
     }
 
-    // Apply visual lead: shift note lookup forward to compensate for display lag
-    const tLook = t + state.visualLeadMs / 1000;
+    // Apply visual lead: shift note lookup forward to compensate for display lag.
+    // Scale back to original note times by multiplying by tempoScale.
+    const tLook = (t + state.visualLeadMs / 1000) * state.tempoScale;
 
-    // Active notes (queried at lead-adjusted time)
+    // Active notes (queried at lead-adjusted, tempo-scaled time)
     const active = getActiveNotes(state.allNotes, tLook);
     ui.setNotesDisplay(active);
 

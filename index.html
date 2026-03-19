@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>seeMusic</title>
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=3">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
@@ -15,6 +15,7 @@
       <h2>seeMusic</h2>
       <p>Click anywhere to start</p>
       <button id="btn-demo">▶ Demo</button>
+      <p class="warning">⚠ Contains flashing images. Not suitable for people with photosensitive epilepsy.</p>
     </div>
   </div>
 
@@ -36,6 +37,7 @@
       </ul>
       <h3>Keyboard shortcuts</h3>
       <p><kbd>Space</kbd> Play / Pause &nbsp;·&nbsp; <kbd>A</kbd> Toggle audio &nbsp;·&nbsp; <kbd>V</kbd> Toggle visual &nbsp;·&nbsp; <kbd>F</kbd> Fullscreen</p>
+      <p class="warning">⚠ <strong>Photosensitivity warning:</strong> seeMusic produces rapidly changing visual patterns that may trigger seizures in people with photosensitive epilepsy or similar conditions. If you or someone nearby is sensitive to flashing lights or patterns, please use the app with caution or turn off the visual display.</p>
     </div>
   </div>
 
@@ -98,6 +100,11 @@
           <span id="tilt-display">0.0</span>
         </div>
         <div class="ctrl-group">
+          <label for="tempo">Tempo</label>
+          <input type="range" id="tempo" min="-1" max="1" step="0.05" value="0">
+          <span id="tempo-display">1.00×</span>
+        </div>
+        <div class="ctrl-group">
           <label for="visual-lead">Visual lead</label>
           <input type="range" id="visual-lead" min="0" max="100" step="1" value="22">
           <span id="visual-lead-display">22 ms</span>
@@ -122,6 +129,6 @@
     </footer>
   </div>
 
-  <script type="module" src="js/app.js?v=2"></script>
+  <script type="module" src="js/app.js?v=3"></script>
 </body>
 </html>

@@ -18,6 +18,7 @@ export function setupUI({
   onColorMode,
   onSyncMeasureToggle,
   onVisualLead,
+  onTempoScale,
 }) {
   const fileSelect      = document.getElementById('file-select');
   const fileInput       = document.getElementById('file-input');
@@ -107,6 +108,14 @@ export function setupUI({
     const active = onHyperbolic();
     btnHyp.textContent = active ? 'Hyp: ON' : 'Hyp: OFF';
     btnHyp.classList.toggle('active', active);
+  });
+
+  const tempoSlider  = document.getElementById('tempo');
+  const tempoDisplay = document.getElementById('tempo-display');
+  tempoSlider.addEventListener('input', () => {
+    const scale = Math.pow(2, Number(tempoSlider.value));
+    tempoDisplay.textContent = scale.toFixed(2) + '×';
+    onTempoScale(scale);
   });
 
   const visualLeadSlider  = document.getElementById('visual-lead');

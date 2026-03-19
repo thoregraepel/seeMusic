@@ -1,14 +1,17 @@
 // MIDI file registry and binary generators
 
 export const MIDI_FILES = [
-  { name: 'Bach – Toccata & Fugue BWV 565', type: 'file', path: 'midi/Bach-Toccata_Fugue_BWV-565.mid' },
-  { name: 'Mike Oldfield – Tubular Bells',  type: 'file', path: 'midi/M.OLDFIELD. Tubular bells.mid'  },
-  { name: 'The Beatles – Yesterday',        type: 'file', path: 'midi/THE BEATLES-Yesterday.mid'       },
-  { name: 'Scott Joplin – The Entertainer', type: 'file', path: 'midi/The_Entertainer.mid'             },
-  { name: 'C Major Scale (test)',            type: 'generated', generator: 'scale'     },
-  { name: 'I–IV–V–I Chords (test)',         type: 'generated', generator: 'chords'    },
-  { name: 'Chromatic Scale (test)',          type: 'generated', generator: 'chromatic' },
-  { name: 'Drone + Melody (test)',           type: 'generated', generator: 'drone'     },
+  { name: 'Bach – Toccata & Fugue BWV 565',    type: 'file', path: 'midi/Bach-Toccata_Fugue_BWV-565.mid' },
+  { name: 'Mike Oldfield – Tubular Bells',     type: 'file', path: 'midi/M.OLDFIELD. Tubular bells.mid'  },
+  { name: 'The Beatles – Yesterday',           type: 'file', path: 'midi/THE BEATLES-Yesterday.mid'       },
+  { name: 'Scott Joplin – The Entertainer',    type: 'file', path: 'midi/The_Entertainer.mid'             },
+  { name: 'C Major Scale (test)',              type: 'generated', generator: 'scale'          },
+  { name: 'I–IV–V–I Chords (test)',            type: 'generated', generator: 'chords'         },
+  { name: 'Chromatic Scale (test)',            type: 'generated', generator: 'chromatic'      },
+  { name: 'Drone + Melody (test)',             type: 'generated', generator: 'drone'          },
+  { name: 'Diatonic Chords I–vii° (test)',     type: 'generated', generator: 'diatonic'       },
+  { name: 'I–vi–ii–V–I (test)',               type: 'generated', generator: 'cadence'        },
+  { name: 'I–vi–ii–V–I with 7ths (test)',     type: 'generated', generator: 'cadence7'       },
 ];
 
 // ── Binary MIDI helpers ───────────────────────────────────────────────────────
@@ -126,12 +129,60 @@ function generateDrone() {
   return buildMidi(events, tpq);
 }
 
+function buildChordSequence(chords, barLen, tpq, bpm) {
+  const events = [tempoEvent(bpm), keyEvent(0, 0)];
+  for (const chord of chords) {
+    chord.forEach(n => events.push(noteOn(n, 80)));
+    events.push(noteOff(chord[0], barLen));
+    chord.slice(1).forEach(n => events.push(noteOff(n)));
+  }
+  return buildMidi(events, tpq);
+}
+
+function generateDiatonic() {
+  const tpq = 480, barLen = tpq * 4;
+  return buildChordSequence([
+    [60, 64, 67], // I    C–E–G
+    [62, 65, 69], // ii   D–F–A
+    [64, 67, 71], // iii  E–G–B
+    [65, 69, 72], // IV   F–A–C
+    [67, 71, 74], // V    G–B–D
+    [69, 72, 76], // vi   A–C–E
+    [71, 74, 77], // vii° B–D–F
+  ], barLen, tpq, 80);
+}
+
+function generateCadence() {
+  const tpq = 480, barLen = tpq * 4;
+  return buildChordSequence([
+    [60, 64, 67], // I   C–E–G
+    [69, 72, 76], // vi  A–C–E
+    [62, 65, 69], // ii  D–F–A
+    [67, 71, 74], // V   G–B–D
+    [60, 64, 67], // I   C–E–G
+  ], barLen, tpq, 80);
+}
+
+function generateCadence7() {
+  const tpq = 480, barLen = tpq * 4;
+  return buildChordSequence([
+    [60, 64, 67, 71], // Imaj7  C–E–G–B
+    [57, 60, 64, 67], // Am7    A–C–E–G
+    [62, 65, 69, 72], // Dm7    D–F–A–C
+    [67, 71, 74, 77], // G7     G–B–D–F
+    [60, 64, 67, 71], // Imaj7  C–E–G–B
+  ], barLen, tpq, 80);
+}
+
 export function generateMidi(type) {
   switch (type) {
     case 'scale':      return generateScale();
     case 'chords':     return generateChords();
     case 'chromatic':  return generateChromatic();
     case 'drone':      return generateDrone();
+    case 'diatonic':   return generateDiatonic();
+    case 'cadence':    return generateCadence();
+    case 'cadence7':   return generateCadence7();
     default: throw new Error(`Unknown generator: ${type}`);
   }
 }

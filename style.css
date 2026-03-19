@@ -65,6 +65,14 @@ body {
   transform: scale(1.04);
 }
 
+.warning {
+  font-size: 0.78rem;
+  color: #e0a020;
+  margin-top: 12px;
+  max-width: 360px;
+  line-height: 1.4;
+}
+
 /* ── About modal ─────────────────────────────────────────────────────────── */
 #about-modal {
   display: none;
