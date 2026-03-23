@@ -263,6 +263,10 @@ export function setupUI({
       el.textContent = mode === 'audio' ? '🎵 AUDIO' : mode === 'mic' ? '🎤 MIC' : '🎹 MIDI';
       el.dataset.mode = mode;
     },
+    setLoadedFile(name) {
+      const el = document.getElementById('loaded-file');
+      if (el) el.textContent = name || '';
+    },
     setMidiStatus(names, error) {
       const el = document.getElementById('midi-status');
       if (!el) return;

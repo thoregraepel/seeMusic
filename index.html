@@ -48,35 +48,87 @@
 
   <div id="app">
     <header>
+
+      <!-- Row 1: global -->
       <div id="header-row1">
         <h1>seeMusic</h1>
         <span id="mode-indicator" data-mode="midi">🎹 MIDI</span>
-        <div id="controls">
-          <select id="file-select"></select>
-          <label id="upload-label" title="Load a MIDI file">
-            Load MIDI
-            <input type="file" id="file-input" accept=".mid,.midi">
-          </label>
-          <label id="audio-upload-label" title="Load an MP3, WAV or OGG file">
-            Load Audio
-            <input type="file" id="audio-input" accept="audio/*,.mp3,.wav,.ogg,.flac,.aac">
-          </label>
-          <button id="btn-play">▶ Play</button>
-          <button id="btn-stop">■ Stop</button>
-        </div>
-        <div id="toggles">
+        <span id="loaded-file"></span>
+        <div id="global-toggles">
           <button id="btn-audio" class="toggle active">Audio: ON</button>
           <button id="btn-visual" class="toggle active">Visual: ON</button>
-          <button id="btn-color" class="toggle">Color: OFF</button>
-          <button id="btn-hyp" class="toggle">Hyp: OFF</button>
           <button id="btn-sync" class="toggle">Sync: OFF</button>
-          <button id="btn-live" class="toggle">Live: OFF</button>
-          <button id="btn-mic" class="toggle">🎤 Mic</button>
           <button id="btn-fullscreen" class="toggle">⛶ Fullscreen</button>
           <button id="btn-about">? About</button>
         </div>
       </div>
-      <div id="header-row2">
+
+      <!-- Row 2: MIDI -->
+      <div class="ctrl-row" id="row-midi">
+        <span class="section-label midi-label">MIDI</span>
+        <select id="file-select"></select>
+        <label id="upload-label" title="Load a MIDI file">
+          Load MIDI
+          <input type="file" id="file-input" accept=".mid,.midi">
+        </label>
+        <button id="btn-play">▶ Play</button>
+        <button id="btn-stop">■ Stop</button>
+        <div class="ctrl-group">
+          <label for="tempo">Tempo</label>
+          <input type="range" id="tempo" min="-1" max="1" step="0.05" value="0">
+          <span id="tempo-display">1.00×</span>
+        </div>
+        <button id="btn-live" class="toggle">Live: OFF</button>
+      </div>
+
+      <!-- Row 3: Audio -->
+      <div class="ctrl-row" id="row-audio">
+        <span class="section-label audio-label">AUDIO</span>
+        <label id="audio-upload-label" title="Load an MP3, WAV or OGG file">
+          Load Audio
+          <input type="file" id="audio-input" accept="audio/*,.mp3,.wav,.ogg,.flac,.aac">
+        </label>
+        <button id="btn-mic" class="toggle">🎤 Mic</button>
+        <div class="ctrl-group">
+          <label for="fft-threshold">Threshold</label>
+          <input type="range" id="fft-threshold" min="-80" max="-20" step="1" value="-70">
+          <span id="fft-threshold-display">-70 dB</span>
+        </div>
+        <div class="ctrl-group">
+          <label for="fft-top-n">Top</label>
+          <input type="range" id="fft-top-n" min="1" max="88" step="1" value="6">
+          <span id="fft-top-n-display">6</span>
+        </div>
+        <div class="ctrl-group">
+          <label for="fft-gain">Gain</label>
+          <input type="range" id="fft-gain" min="0" max="4" step="0.1" value="2">
+          <span id="fft-gain-display">4.0×</span>
+        </div>
+        <div class="ctrl-group">
+          <label for="fft-smoothing">Smooth</label>
+          <input type="range" id="fft-smoothing" min="0" max="0.99" step="0.01" value="0.75">
+          <span id="fft-smoothing-display">0.75</span>
+        </div>
+        <div class="ctrl-group">
+          <label for="fft-thresh-tilt">Tilt</label>
+          <input type="range" id="fft-thresh-tilt" min="-6" max="12" step="0.5" value="3">
+          <span id="fft-thresh-tilt-display">+3.0</span>
+        </div>
+        <div class="ctrl-group">
+          <label for="fft-low-midi">Low</label>
+          <input type="range" id="fft-low-midi" min="21" max="108" step="1" value="36">
+          <span id="fft-low-midi-display">C2</span>
+        </div>
+        <div class="ctrl-group">
+          <label for="fft-high-midi">High</label>
+          <input type="range" id="fft-high-midi" min="21" max="108" step="1" value="84">
+          <span id="fft-high-midi-display">C6</span>
+        </div>
+      </div>
+
+      <!-- Row 4: Visual -->
+      <div class="ctrl-row" id="row-visual">
+        <span class="section-label visual-label">VISUAL</span>
         <div class="ctrl-group">
           <label for="sf-scale">SF Scale</label>
           <input type="range" id="sf-scale" min="-2" max="2" step="0.05" value="0">
@@ -112,52 +164,15 @@
           <input type="range" id="tilt" min="-2" max="2" step="0.1" value="0">
           <span id="tilt-display">0.0</span>
         </div>
-        <div class="ctrl-group" id="ctrl-tempo">
-          <label for="tempo">Tempo</label>
-          <input type="range" id="tempo" min="-1" max="1" step="0.05" value="0">
-          <span id="tempo-display">1.00×</span>
-        </div>
-        <div class="ctrl-group">
-          <label for="fft-threshold">FFT threshold</label>
-          <input type="range" id="fft-threshold" min="-80" max="-20" step="1" value="-70">
-          <span id="fft-threshold-display">-70 dB</span>
-        </div>
-        <div class="ctrl-group">
-          <label for="fft-top-n">Top pitches</label>
-          <input type="range" id="fft-top-n" min="1" max="88" step="1" value="6">
-          <span id="fft-top-n-display">6</span>
-        </div>
-        <div class="ctrl-group">
-          <label for="fft-gain">Gain</label>
-          <input type="range" id="fft-gain" min="0" max="4" step="0.1" value="2">
-          <span id="fft-gain-display">4.0×</span>
-        </div>
-        <div class="ctrl-group">
-          <label for="fft-smoothing">Smoothing</label>
-          <input type="range" id="fft-smoothing" min="0" max="0.99" step="0.01" value="0.75">
-          <span id="fft-smoothing-display">0.75</span>
-        </div>
-        <div class="ctrl-group">
-          <label for="fft-thresh-tilt">Thresh tilt</label>
-          <input type="range" id="fft-thresh-tilt" min="-6" max="12" step="0.5" value="3">
-          <span id="fft-thresh-tilt-display">+3.0</span>
-        </div>
-        <div class="ctrl-group">
-          <label for="fft-low-midi">Low pitch</label>
-          <input type="range" id="fft-low-midi" min="21" max="108" step="1" value="36">
-          <span id="fft-low-midi-display">C2</span>
-        </div>
-        <div class="ctrl-group">
-          <label for="fft-high-midi">High pitch</label>
-          <input type="range" id="fft-high-midi" min="21" max="108" step="1" value="84">
-          <span id="fft-high-midi-display">C6</span>
-        </div>
+        <button id="btn-color" class="toggle">Color: OFF</button>
+        <button id="btn-hyp" class="toggle">Hyp: OFF</button>
         <div class="ctrl-group">
           <label for="visual-lead">Visual lead</label>
           <input type="range" id="visual-lead" min="0" max="100" step="1" value="22">
           <span id="visual-lead-display">22 ms</span>
         </div>
       </div>
+
     </header>
 
     <main>

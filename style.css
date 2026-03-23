@@ -172,18 +172,53 @@ header {
 #header-row1 {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
-#header-row2 {
+#loaded-file {
+  font-size: 12px;
+  color: var(--accent);
+  font-style: italic;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+#global-toggles {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 8px;
+  margin-left: auto;
   flex-wrap: wrap;
-  padding-top: 4px;
+}
+
+.ctrl-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 5px;
   border-top: 1px solid var(--border);
 }
+
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 3px;
+  white-space: nowrap;
+  min-width: 50px;
+  text-align: center;
+}
+
+.midi-label  { background: #1a2a1a; color: #6dbf6d; border: 1px solid #3a6a3a; }
+.audio-label { background: #1a1a2a; color: #6d9dbf; border: 1px solid #3a4a6a; }
+.visual-label{ background: #2a1a2a; color: #bf6dbf; border: 1px solid #6a3a6a; }
 
 .ctrl-group {
   display: flex;
@@ -254,14 +289,6 @@ h1 {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-}
-
-#toggles {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
   flex-wrap: wrap;
 }
 

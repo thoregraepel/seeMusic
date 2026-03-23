@@ -134,6 +134,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             state.inputMode = 'mic';
             state.duration  = 0;
             ui.setModeIndicator('mic');
+            ui.setLoadedFile('Microphone');
             ui.setKeyDisplay('—');
             ui.setProgress(0, 0);
             ui.setTimeDisplay(0, 0);
@@ -227,6 +228,7 @@ async function loadAndSchedule(descriptor) {
   ui.setProgress(0, state.duration);
   ui.setTimeDisplay(0, state.duration);
   ui.setModeIndicator('midi');
+  ui.setLoadedFile(descriptor.name || '');
 
   if (state.audioReady) scheduleWithTempo();
   ui.setPlayButton('▶ Play');
@@ -247,6 +249,7 @@ async function loadAudioBuffer(arrayBuffer, filename) {
     ui.setProgress(0, duration);
     ui.setTimeDisplay(0, duration);
     ui.setModeIndicator('audio');
+    ui.setLoadedFile(filename);
     ui.setPlayButton('▶ Play');
   } catch (err) {
     console.error('Audio load error:', err);
