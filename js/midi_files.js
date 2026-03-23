@@ -12,6 +12,7 @@ export const MIDI_FILES = [
   { name: 'Diatonic Chords I–vii° (test)',     type: 'generated', generator: 'diatonic'       },
   { name: 'I–vi–ii–V–I (test)',               type: 'generated', generator: 'cadence'        },
   { name: 'I–vi–ii–V–I with 7ths (test)',     type: 'generated', generator: 'cadence7'       },
+  { name: 'Full Chromatic Sweep (test)',       type: 'generated', generator: 'sweep'          },
 ];
 
 // ── Binary MIDI helpers ───────────────────────────────────────────────────────
@@ -111,7 +112,6 @@ function generateDrone() {
   // Drone on C3 (48) + melody on top
   const melody = [64, 67, 69, 71, 72, 71, 69, 67, 64];
   const droneNote = 48;
-  const totalBeats = melody.length;
   const events = [tempoEvent(90), keyEvent(0, 0)];
 
   // Drone note on
@@ -174,6 +174,21 @@ function generateCadence7() {
   ], barLen, tpq, 80);
 }
 
+function generateSweep() {
+  const tpq = 480;
+  const noteDur = Math.round(tpq * 0.5); // eighth note at 120 BPM
+  const lo = 12, hi = 127;
+  const up   = Array.from({length: hi - lo + 1}, (_, i) => lo + i);
+  const down = up.slice(0, -1).reverse(); // hi-1 down to lo (avoid repeating hi)
+  const notes = [...up, ...down];
+  const events = [tempoEvent(120)];
+  for (const n of notes) {
+    events.push(noteOn(n, 90));
+    events.push(noteOff(n, noteDur));
+  }
+  return buildMidi(events, tpq);
+}
+
 export function generateMidi(type) {
   switch (type) {
     case 'scale':      return generateScale();
@@ -183,6 +198,7 @@ export function generateMidi(type) {
     case 'diatonic':   return generateDiatonic();
     case 'cadence':    return generateCadence();
     case 'cadence7':   return generateCadence7();
+    case 'sweep':      return generateSweep();
     default: throw new Error(`Unknown generator: ${type}`);
   }
 }

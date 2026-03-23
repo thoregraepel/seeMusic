@@ -39,7 +39,9 @@ const WAVEFORMS = {
   sine:     p => Math.sin(p),
   square:   p => Math.sign(Math.sin(p)) || 0,
   triangle: p => (2 / Math.PI) * Math.asin(Math.sin(p)),
-  sawtooth: p => { const t = p / (2 * Math.PI); return 2 * (t - Math.floor(t)) - 1; },
+  sawtooth:  p => { const t = p / (2 * Math.PI); return 2 * (t - Math.floor(t)) - 1; },
+  sawtooth2: p => { const t = p / (2 * Math.PI); return 1 - 2 * (t - Math.floor(t)); },
+  sawtooth2: p => { const t = p / (2 * Math.PI); return 1 - 2 * (t - Math.floor(t)); },
 };
 
 // ── Colour helpers ────────────────────────────────────────────────────────────

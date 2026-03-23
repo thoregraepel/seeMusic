@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>seeMusic</title>
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
@@ -23,21 +23,26 @@
     <div id="about-content">
       <button id="about-close" aria-label="Close">✕</button>
       <h2>About seeMusic</h2>
-      <p>seeMusic was created by <strong>Thore Graepel</strong> and <strong>Claude</strong> (Anthropic's AI assistant) to make music visible.</p>
-      <h3>What it does</h3>
-      <p>seeMusic renders MIDI music as live visual interference patterns. Each playing note becomes a spatial grating — a pattern of stripes whose spatial frequency corresponds to the note's pitch. When multiple notes sound simultaneously their gratings superimpose, creating complex interference patterns just as waves of light or water do.</p>
-      <h3>How it works</h3>
+      <p>seeMusic was created by <strong>Thore Graepel</strong> and <strong>Claude</strong> (Anthropic's AI assistant) to make music visible. Each note becomes a spatial grating whose frequency matches its pitch — finer stripes for high notes, coarser for low. Superimposed gratings create interference patterns just as light waves do.</p>
+      <h3>MIDI mode</h3>
+      <p>Select a MIDI file from the dropdown or load your own.</p>
+      <h3>Audio mode</h3>
+      <p>Load any MP3, WAV, or OGG file with <strong>Load Audio</strong>. The app analyses the real-time FFT of the audio and maps all 88 piano notes (A0–C8) to gratings, weighted by their loudness. Use the <strong>FFT Threshold</strong> slider to filter out background noise.</p>
+      <h3>Live mode</h3>
+      <p>Connect a MIDI keyboard via USB and click <strong>Live</strong> to visualise what you play in real time.</p>
+      <h3>Microphone mode</h3>
+      <p>Click <strong>🎤 Mic</strong> to visualise live audio from your microphone.</p>
+      <h3>Visual controls</h3>
       <ul>
-        <li>Each note's pitch sets its grating frequency: higher notes produce finer stripes.</li>
-        <li>In <strong>colour mode</strong> each pitch class maps to a hue (C&nbsp;=&nbsp;red, +30° per semitone around the colour wheel), so harmony and melody become immediately visible as colour and pattern.</li>
-        <li><strong>Hyperbolic mode</strong> warps the display geometry with a tanh mapping, creating a Poincaré-disk-like distortion at the boundaries.</li>
-        <li>The <strong>waveform</strong> selector changes the grating profile: sine, square, triangle, or sawtooth.</li>
-        <li><strong>Superposition</strong> controls how multiple gratings combine: sum, product, or max.</li>
+        <li>In <strong>colour mode</strong> each pitch class maps to a hue (C&nbsp;=&nbsp;red, +30° per semitone).</li>
+        <li><strong>Hyperbolic mode</strong> warps the geometry with a tanh mapping (Poincaré-disk-like).</li>
+        <li><strong>Waveform</strong> changes the grating profile: sine, square, triangle, or sawtooth.</li>
+        <li><strong>Superposition</strong> controls how gratings combine: sum, product, or max.</li>
         <li><strong>Spectral tilt</strong> weights amplitudes by pitch, emphasising highs or lows.</li>
       </ul>
       <h3>Keyboard shortcuts</h3>
       <p><kbd>Space</kbd> Play / Pause &nbsp;·&nbsp; <kbd>A</kbd> Toggle audio &nbsp;·&nbsp; <kbd>V</kbd> Toggle visual &nbsp;·&nbsp; <kbd>F</kbd> Fullscreen</p>
-      <p class="warning">⚠ <strong>Photosensitivity warning:</strong> seeMusic produces rapidly changing visual patterns that may trigger seizures in people with photosensitive epilepsy or similar conditions. If you or someone nearby is sensitive to flashing lights or patterns, please use the app with caution or turn off the visual display.</p>
+      <p class="warning">⚠ <strong>Photosensitivity warning:</strong> seeMusic produces rapidly changing visual patterns that may trigger seizures in people with photosensitive epilepsy or similar conditions. Use with caution or turn off the visual display if sensitive.</p>
     </div>
   </div>
 
@@ -45,11 +50,16 @@
     <header>
       <div id="header-row1">
         <h1>seeMusic</h1>
+        <span id="mode-indicator" data-mode="midi">🎹 MIDI</span>
         <div id="controls">
           <select id="file-select"></select>
-          <label id="upload-label">
+          <label id="upload-label" title="Load a MIDI file">
             Load MIDI
             <input type="file" id="file-input" accept=".mid,.midi">
+          </label>
+          <label id="audio-upload-label" title="Load an MP3, WAV or OGG file">
+            Load Audio
+            <input type="file" id="audio-input" accept="audio/*,.mp3,.wav,.ogg,.flac,.aac">
           </label>
           <button id="btn-play">▶ Play</button>
           <button id="btn-stop">■ Stop</button>
@@ -60,6 +70,8 @@
           <button id="btn-color" class="toggle">Color: OFF</button>
           <button id="btn-hyp" class="toggle">Hyp: OFF</button>
           <button id="btn-sync" class="toggle">Sync: OFF</button>
+          <button id="btn-live" class="toggle">Live: OFF</button>
+          <button id="btn-mic" class="toggle">🎤 Mic</button>
           <button id="btn-fullscreen" class="toggle">⛶ Fullscreen</button>
           <button id="btn-about">? About</button>
         </div>
@@ -76,7 +88,8 @@
             <option value="sine">Sine</option>
             <option value="square">Square</option>
             <option value="triangle">Triangle</option>
-            <option value="sawtooth">Sawtooth</option>
+            <option value="sawtooth" selected>Sawtooth ↑</option>
+            <option value="sawtooth2">Sawtooth ↓</option>
           </select>
         </div>
         <div class="ctrl-group">
@@ -99,10 +112,45 @@
           <input type="range" id="tilt" min="-2" max="2" step="0.1" value="0">
           <span id="tilt-display">0.0</span>
         </div>
-        <div class="ctrl-group">
+        <div class="ctrl-group" id="ctrl-tempo">
           <label for="tempo">Tempo</label>
           <input type="range" id="tempo" min="-1" max="1" step="0.05" value="0">
           <span id="tempo-display">1.00×</span>
+        </div>
+        <div class="ctrl-group">
+          <label for="fft-threshold">FFT threshold</label>
+          <input type="range" id="fft-threshold" min="-80" max="-20" step="1" value="-70">
+          <span id="fft-threshold-display">-70 dB</span>
+        </div>
+        <div class="ctrl-group">
+          <label for="fft-top-n">Top pitches</label>
+          <input type="range" id="fft-top-n" min="1" max="88" step="1" value="6">
+          <span id="fft-top-n-display">6</span>
+        </div>
+        <div class="ctrl-group">
+          <label for="fft-gain">Gain</label>
+          <input type="range" id="fft-gain" min="0" max="4" step="0.1" value="2">
+          <span id="fft-gain-display">4.0×</span>
+        </div>
+        <div class="ctrl-group">
+          <label for="fft-smoothing">Smoothing</label>
+          <input type="range" id="fft-smoothing" min="0" max="0.99" step="0.01" value="0.75">
+          <span id="fft-smoothing-display">0.75</span>
+        </div>
+        <div class="ctrl-group">
+          <label for="fft-thresh-tilt">Thresh tilt</label>
+          <input type="range" id="fft-thresh-tilt" min="-6" max="12" step="0.5" value="3">
+          <span id="fft-thresh-tilt-display">+3.0</span>
+        </div>
+        <div class="ctrl-group">
+          <label for="fft-low-midi">Low pitch</label>
+          <input type="range" id="fft-low-midi" min="21" max="108" step="1" value="36">
+          <span id="fft-low-midi-display">C2</span>
+        </div>
+        <div class="ctrl-group">
+          <label for="fft-high-midi">High pitch</label>
+          <input type="range" id="fft-high-midi" min="21" max="108" step="1" value="84">
+          <span id="fft-high-midi-display">C6</span>
         </div>
         <div class="ctrl-group">
           <label for="visual-lead">Visual lead</label>
@@ -125,10 +173,11 @@
       <div id="info">
         <span id="key-display">Key: —</span>
         <span id="notes-display">Notes: —</span>
+        <span id="midi-status"></span>
       </div>
     </footer>
   </div>
 
-  <script type="module" src="js/app.js?v=3"></script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

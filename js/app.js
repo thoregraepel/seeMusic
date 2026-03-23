@@ -1,55 +1,69 @@
 import { MIDI_FILES, generateMidi, loadMidiFile } from './midi_files.js';
 import { parseMidi } from './midi_parser.js';
 import { getActiveNotes } from './scheduler.js';
-import * as audio from './audio_engine.js';
+import * as audio from './audio_engine.js';        // MIDI / Tone.js engine
+import * as mp3   from './mp3_engine.js';           // Audio file / Web Audio engine
+import { buildNoteRanges, getNotesFromFft } from './fft_analyzer.js';
 import { init as initVisual, render } from './visual_engine.js';
 import { setupUI } from './ui.js';
+import { initMidiInput, clearNotes } from './midi_input.js';
 
 // ── App state ─────────────────────────────────────────────────────────────────
 const state = {
-  allNotes:         [],
-  tonicMidi:        60,
+  // shared
+  inputMode:        'midi',     // 'midi' | 'audio' | 'mic'
   duration:         0,
-  originalDuration: 0,
-  keyName:          'C major (default)',
   showAudio:        true,
   showVisual:       true,
-  audioReady:       false,
-  sfScale:          1.0,      // spatial frequency multiplier (set from slider)
-  waveform:         'sine',   // 'sine' | 'square' | 'triangle' | 'sawtooth'
-  superMode:        'sum',    // 'sum' | 'product' | 'max'
-  renderMode:       'circles', // 'circles' | 'grid'
+  sfScale:          1.0,
+  waveform:         'sawtooth',  // 'sine' | 'square' | 'triangle' | 'sawtooth' | 'sawtooth2'
+  superMode:        'sum',
+  renderMode:       'circles',
   hyperbolic:       false,
   colorMode:        false,
-  tilt:             0,        // spectral tilt: >0 boosts highs, <0 boosts lows
-  tempoScale:       1.0,      // playback speed multiplier (0.5–2.0)
-  syncMeasure:      false,    // audio-visual sync measurement mode
-  visualLeadMs:     22,       // ms to read ahead for note selection (compensates display lag)
+  tilt:             0,
+  syncMeasure:      false,
+  // midi-mode only
+  allNotes:         [],
+  tonicMidi:        60,
+  originalDuration: 0,
+  keyName:          'C major (default)',
+  audioReady:       false,
+  tempoScale:       1.0,
+  visualLeadMs:     22,
+  // audio-mode only
+  fftThreshold:     -70,        // dBFS; notes below this are ignored
+  fftTopN:          6,          // keep only the N loudest FFT notes (contrast control)
+  fftLowMidi:       36,         // C2 — lowest pitch passed to renderer
+  fftHighMidi:      84,         // C6 — highest pitch passed to renderer
+  fftGain:          4.0,        // velocity multiplier before render (boosts contrast)
+  fftSmoothing:     0.75,       // AnalyserNode smoothingTimeConstant (0 = jittery, 1 = sluggish)
+  fftThresholdTilt: 3,          // dB/octave; +ve raises threshold for high notes (suppresses overtones)
+  // live MIDI keyboard
+  liveMode:         false,      // true = use live MIDI input instead of scheduled file
+  liveNotes:        [],         // [{midi, velocity}] from MIDI keyboard
 };
 
-// ── Sync measurement state ────────────────────────────────────────────────────
-const syncRenders = [];  // last N render durations (ms)
-const SYNC_MAX_RESULTS = 30;
+// FFT analyser state (initialised once an audio file is loaded)
+let fftNoteRanges = null;
+let fftFreqBuf    = null;
 
-// Visual display lag = canvas render time + 1 vsync frame (~16ms).
-// This is what needs to be compensated via VISUAL_LEAD_S.
+// ── Sync measurement ──────────────────────────────────────────────────────────
+const syncRenders = [];
+const SYNC_MAX    = 30;
+
 function updateSyncDisplay(renderMs) {
   syncRenders.push(renderMs);
-  if (syncRenders.length > SYNC_MAX_RESULTS) syncRenders.shift();
-
+  if (syncRenders.length > SYNC_MAX) syncRenders.shift();
   const mean = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
-  const meanRender = mean(syncRenders);
-  const displayLag = meanRender + 16; // +1 vsync frame
-
-  console.log(`[sync] render=${renderMs.toFixed(1)}ms | mean render=${meanRender.toFixed(1)}ms display lag\u2248${displayLag.toFixed(0)}ms (n=${syncRenders.length})`);
-
+  const mr   = mean(syncRenders);
   const panel = document.getElementById('sync-panel');
   if (!panel) return;
   panel.innerHTML =
     `<b>Sync measurement</b> (n=${syncRenders.length})<br>` +
-    `canvas render:  <b>${meanRender.toFixed(1)} ms</b> (mean)<br>` +
-    `display lag \u2248 <b>${displayLag.toFixed(0)} ms</b> (render + 1 frame)<br>` +
-    `visual lead:    <b>${(state.visualLeadMs).toFixed(0)} ms</b> (current offset)<br>` +
+    `canvas render:  <b>${mr.toFixed(1)} ms</b> (mean)<br>` +
+    `display lag \u2248 <b>${(mr+16).toFixed(0)} ms</b> (render + 1 frame)<br>` +
+    `visual lead:    <b>${state.visualLeadMs.toFixed(0)} ms</b> (current offset)<br>` +
     `<span style="color:#888;font-size:11px">last render: ${renderMs.toFixed(1)}ms</span>`;
 }
 
@@ -61,60 +75,116 @@ document.addEventListener('DOMContentLoaded', async () => {
   initVisual(document.getElementById('grating-canvas'));
 
   ui = setupUI({
-    midiFiles: MIDI_FILES,
-    onSelect:        idx => loadAndSchedule(MIDI_FILES[idx]),
-    onCustomFile:    (buf, name) => loadAndSchedule({ type: 'buffer', buffer: buf, name }),
-    onPlay:          handlePlayPause,
-    onStop:          handleStop,
-    onSeek:          handleSeek,
-    onAudioToggle:    () => { state.showAudio  = !state.showAudio; audio.setMuted(!state.showAudio); return state.showAudio; },
-    onVisualToggle:   () => { state.showVisual = !state.showVisual; return state.showVisual; },
-    onSfScale:      v => { state.sfScale     = v; },
-    onWaveform:     v => { state.waveform    = v; },
-    onSuperMode:    v => { state.superMode   = v; },
-    onRenderMode:   v => { state.renderMode  = v; },
-    onTilt:         v => { state.tilt        = v; },
-    onHyperbolic:   () => { state.hyperbolic = !state.hyperbolic; return state.hyperbolic; },
-    onColorMode:    () => { state.colorMode  = !state.colorMode;  return state.colorMode;  },
-    onSyncMeasureToggle:  () => {
+    midiFiles:   MIDI_FILES,
+    onSelect:    idx  => loadAndSchedule(MIDI_FILES[idx]),
+    onCustomFile:(buf, name) => loadAndSchedule({ type: 'buffer', buffer: buf, name }),
+    onAudioFile: (buf, name) => loadAudioBuffer(buf, name),
+    onPlay:      handlePlayPause,
+    onStop:      handleStop,
+    onSeek:      handleSeek,
+    onAudioToggle: () => {
+      state.showAudio = !state.showAudio;
+      if (state.inputMode === 'audio' || state.inputMode === 'mic') mp3.setMuted(!state.showAudio);
+      else audio.setMuted(!state.showAudio);
+      return state.showAudio;
+    },
+    onVisualToggle: () => { state.showVisual = !state.showVisual; return state.showVisual; },
+    onSfScale:   v => { state.sfScale    = v; },
+    onWaveform:  v => { state.waveform   = v; },
+    onSuperMode: v => { state.superMode  = v; },
+    onRenderMode:v => { state.renderMode = v; },
+    onTilt:      v => { state.tilt       = v; },
+    onHyperbolic:  () => { state.hyperbolic = !state.hyperbolic; return state.hyperbolic; },
+    onColorMode:   () => { state.colorMode  = !state.colorMode;  return state.colorMode;  },
+    onSyncMeasureToggle: () => {
       state.syncMeasure = !state.syncMeasure;
-      if (state.syncMeasure) { syncRenders.length = 0; }
+      if (state.syncMeasure) syncRenders.length = 0;
       return state.syncMeasure;
     },
-    onVisualLead: ms => { state.visualLeadMs = ms; },
-    onTempoScale: scale => {
+    onVisualLead:    ms    => { state.visualLeadMs  = ms; },
+    onTempoScale:    scale => {
       state.tempoScale = scale;
       state.duration   = state.originalDuration / scale;
-      if (state.audioReady) {
+      if (state.audioReady && state.inputMode === 'midi') {
         scheduleWithTempo();
         ui.setPlayButton('▶ Play');
       }
       ui.setProgress(0, state.duration);
       ui.setTimeDisplay(0, state.duration);
     },
+    onFftThreshold: db => { state.fftThreshold = db; },
+    onFftTopN:       n  => { state.fftTopN      = n;  },
+    onFftLowMidi:    n  => { state.fftLowMidi   = n;  },
+    onFftHighMidi:   n  => { state.fftHighMidi  = n;  },
+    onFftGain:       v  => { state.fftGain      = v;  },
+    onFftSmoothing:     v => { state.fftSmoothing     = v; mp3.setSmoothing(v); },
+    onFftThresholdTilt: v => { state.fftThresholdTilt = v; },
+    onMicToggle: () => {
+      if (state.inputMode === 'mic') {
+        mp3.stopMic();
+        state.inputMode = 'midi';
+        ui.setModeIndicator('midi');
+        ui.setPlayButton('▶ Play');
+        return false;
+      } else {
+        mp3.startMic()
+          .then(() => {
+            fftNoteRanges = buildNoteRanges(mp3.getSampleRate(), 8192);
+            fftFreqBuf    = new Float32Array(mp3.getAnalyserNode().frequencyBinCount);
+            state.inputMode = 'mic';
+            state.duration  = 0;
+            ui.setModeIndicator('mic');
+            ui.setKeyDisplay('—');
+            ui.setProgress(0, 0);
+            ui.setTimeDisplay(0, 0);
+            ui.setPlayButton('▶ Play');
+          })
+          .catch(err => {
+            console.error('Mic error:', err);
+            alert('Microphone access denied or unavailable.');
+          });
+        return true;
+      }
+    },
+    onLiveMode: async () => {
+      if (!state.liveMode) {
+        try {
+          const names = await initMidiInput(notes => { state.liveNotes = notes; });
+          state.liveMode = true;
+          ui.setMidiStatus(names);
+          return true;
+        } catch (err) {
+          ui.setMidiStatus(null, err.message);
+          return false;
+        }
+      } else {
+        state.liveMode = false;
+        clearNotes();
+        state.liveNotes = [];
+        ui.setMidiStatus([]);
+        return false;
+      }
+    },
   });
 
-  // Dismiss overlay on click / interaction → starts audio context
+  // Overlay: click anywhere → init MIDI audio and load default file
   const overlay = document.getElementById('overlay');
   overlay.addEventListener('click', async () => {
     await audio.initAudio();
     state.audioReady = true;
     overlay.style.display = 'none';
-    // Load default file
     await loadAndSchedule(MIDI_FILES[0]);
     startRaf();
   });
 
-  // Demo button: load Bach, colour on, hyperbolic off, fullscreen, autoplay
+  // Demo button
   document.getElementById('btn-demo').addEventListener('click', async (e) => {
     e.stopPropagation();
-    // Fullscreen must be requested synchronously within the user gesture
     document.documentElement.requestFullscreen().catch(() => {});
     await audio.initAudio();
     state.audioReady = true;
     overlay.style.display = 'none';
-    // Enable colour mode and ensure hyperbolic is off before loading
-    state.colorMode = true;
+    state.colorMode  = true;
     state.hyperbolic = false;
     ui.setColorMode(true);
     ui.setHyperbolic(false);
@@ -128,37 +198,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   startRaf();
 });
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── MIDI helpers ──────────────────────────────────────────────────────────────
 function scheduleWithTempo() {
   const s = state.tempoScale;
-  const scaled = state.allNotes.map(n => ({ ...n, time: n.time / s, duration: n.duration / s }));
-  audio.scheduleNotes(scaled);
+  audio.scheduleNotes(state.allNotes.map(n => ({ ...n, time: n.time / s, duration: n.duration / s })));
 }
 
-// ── Load & schedule ───────────────────────────────────────────────────────────
 async function loadAndSchedule(descriptor) {
   let buf;
   try {
-    if (descriptor.type === 'generated') {
-      buf = generateMidi(descriptor.generator);
-    } else if (descriptor.type === 'buffer') {
-      buf = descriptor.buffer;
-    } else {
-      buf = await loadMidiFile(descriptor.path);
-    }
-  } catch (err) {
-    console.error('MIDI load error:', err);
-    return;
-  }
+    if (descriptor.type === 'generated') buf = generateMidi(descriptor.generator);
+    else if (descriptor.type === 'buffer') buf = descriptor.buffer;
+    else buf = await loadMidiFile(descriptor.path);
+  } catch (err) { console.error('MIDI load error:', err); return; }
 
   let parsed;
-  try {
-    parsed = parseMidi(buf);
-  } catch (err) {
-    console.error('MIDI parse error:', err);
-    return;
-  }
+  try { parsed = parseMidi(buf); }
+  catch (err) { console.error('MIDI parse error:', err); return; }
 
+  state.inputMode       = 'midi';
   state.allNotes        = parsed.allNotes;
   state.tonicMidi       = parsed.tonicMidi;
   state.originalDuration = parsed.duration;
@@ -168,88 +226,118 @@ async function loadAndSchedule(descriptor) {
   ui.setKeyDisplay(state.keyName);
   ui.setProgress(0, state.duration);
   ui.setTimeDisplay(0, state.duration);
+  ui.setModeIndicator('midi');
 
-  if (state.audioReady) {
-    scheduleWithTempo();
-  }
+  if (state.audioReady) scheduleWithTempo();
   ui.setPlayButton('▶ Play');
+}
+
+// ── Audio file helpers ────────────────────────────────────────────────────────
+async function loadAudioBuffer(arrayBuffer, filename) {
+  try {
+    const duration = await mp3.loadAudioFile(arrayBuffer);
+
+    fftNoteRanges = buildNoteRanges(mp3.getSampleRate(), 8192);
+    fftFreqBuf    = new Float32Array(mp3.getAnalyserNode().frequencyBinCount);
+
+    state.inputMode = 'audio';
+    state.duration  = duration;
+
+    ui.setKeyDisplay('—');
+    ui.setProgress(0, duration);
+    ui.setTimeDisplay(0, duration);
+    ui.setModeIndicator('audio');
+    ui.setPlayButton('▶ Play');
+  } catch (err) {
+    console.error('Audio load error:', err);
+  }
 }
 
 // ── Transport controls ────────────────────────────────────────────────────────
 function handlePlayPause() {
-  if (!state.audioReady) return '▶ Play';
-
-  const s = audio.getState();
-  if (s === 'started') {
-    audio.pause();
-    return '▶ Play';
+  if (state.inputMode === 'audio') {
+    if (!mp3.isLoaded()) return '▶ Play';
+    if (mp3.getState() === 'started') { mp3.pause(); return '▶ Play'; }
+    else { mp3.play(); return '⏸ Pause'; }
   } else {
-    audio.play();
-    return '⏸ Pause';
+    if (!state.audioReady) return '▶ Play';
+    if (audio.getState() === 'started') { audio.pause(); return '▶ Play'; }
+    else { audio.play(); return '⏸ Pause'; }
   }
 }
 
 function handleStop() {
-  if (!state.audioReady) return;
-  audio.stop();
+  if (state.inputMode === 'audio') { mp3.stop(); }
+  else { if (!state.audioReady) return; audio.stop(); }
   ui.setProgress(0, state.duration);
   ui.setTimeDisplay(0, state.duration);
 }
 
 function handleSeek(seconds) {
-  if (!state.audioReady) return;
-  audio.seek(seconds);
+  if (state.inputMode === 'audio') mp3.seek(seconds);
+  else { if (state.audioReady) audio.seek(seconds); }
 }
 
 // ── Render loop ───────────────────────────────────────────────────────────────
 function startRaf() {
   if (rafId !== null) return;
-
   function frame() {
-    const t = state.audioReady ? audio.getTime() : 0;
+    let t, active;
 
-    // Update progress bar and time
-    if (state.duration > 0) {
+    if (state.liveMode) {
+      t = 0;
+      active = state.liveNotes;
+    } else if (state.inputMode === 'audio' || state.inputMode === 'mic') {
+      t = state.inputMode === 'audio' ? mp3.getTime() : 0;
+
+      let notes = fftNoteRanges
+        ? getNotesFromFft(mp3.getAnalyserNode(), fftNoteRanges, fftFreqBuf, state.fftThreshold, state.fftThresholdTilt)
+        : [];
+      notes = notes.filter(n => n.midi >= state.fftLowMidi && n.midi <= state.fftHighMidi);
+      notes = notes.slice(0, state.fftTopN);
+      if (state.fftGain !== 1.0)
+        notes = notes.map(n => ({ ...n, velocity: Math.min(1, n.velocity * state.fftGain) }));
+      if (state.renderMode === 'grid' && state.superMode !== 'sum' && !state.colorMode) {
+        notes = notes.slice(0, 24);
+      }
+      active = notes;
+    } else {
+      t = state.audioReady ? audio.getTime() : 0;
+      const tLook = (t + state.visualLeadMs / 1000) * state.tempoScale;
+      active = getActiveNotes(state.allNotes, tLook);
+    }
+
+    if (state.duration > 0 && !state.liveMode) {
       ui.setProgress(Math.min(t, state.duration), state.duration);
       ui.setTimeDisplay(t, state.duration);
     }
 
-    // Apply visual lead: shift note lookup forward to compensate for display lag.
-    // Scale back to original note times by multiplying by tempoScale.
-    const tLook = (t + state.visualLeadMs / 1000) * state.tempoScale;
-
-    // Active notes (queried at lead-adjusted, tempo-scaled time)
-    const active = getActiveNotes(state.allNotes, tLook);
     ui.setNotesDisplay(active);
 
-    // Sync measurement: time the render call
     const syncT0 = state.syncMeasure ? performance.now() : 0;
-
-    // Visual (use tLook so drift phase is consistent with note selection)
     render(active, {
-      showVisual:  state.showVisual,
-      sfScale:     state.sfScale,
-      waveform:    state.waveform,
-      superMode:   state.superMode,
-      renderMode:  state.renderMode,
-      hyperbolic:  state.hyperbolic,
-      colorMode:   state.colorMode,
-      tilt:        state.tilt,
+      showVisual: state.showVisual,
+      sfScale:    state.sfScale,
+      waveform:   state.waveform,
+      superMode:  state.superMode,
+      renderMode: state.renderMode,
+      hyperbolic: state.hyperbolic,
+      colorMode:  state.colorMode,
+      tilt:       state.tilt,
     });
+    if (state.syncMeasure) updateSyncDisplay(performance.now() - syncT0);
 
-    // Sync measurement: record render duration
-    if (state.syncMeasure) {
-      updateSyncDisplay(performance.now() - syncT0);
-    }
-
-    // Auto-stop detection
-    if (state.audioReady && audio.getState() === 'started' && t >= state.duration && state.duration > 0) {
-      audio.stop();
-      ui.setPlayButton('▶ Play');
+    // Auto-stop (not applicable in live or mic mode)
+    if (!state.liveMode && state.inputMode !== 'mic') {
+      const playing = state.inputMode === 'audio' ? mp3.getState() === 'started'
+        : state.audioReady && audio.getState() === 'started';
+      if (playing && t >= state.duration && state.duration > 0) {
+        if (state.inputMode === 'audio') mp3.stop(); else audio.stop();
+        ui.setPlayButton('▶ Play');
+      }
     }
 
     rafId = requestAnimationFrame(frame);
   }
-
   rafId = requestAnimationFrame(frame);
 }

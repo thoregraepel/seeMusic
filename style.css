@@ -217,6 +217,39 @@ h1 {
   white-space: nowrap;
 }
 
+#mode-indicator {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: #aaa;
+  white-space: nowrap;
+}
+
+#mode-indicator[data-mode="audio"] {
+  border-color: #4a9eff88;
+  color: var(--accent);
+}
+
+#audio-upload-label {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s;
+  border-left: 2px solid var(--accent);
+}
+
+#audio-upload-label:hover { background: var(--border); }
+
+#audio-input { display: none; }
+
 #controls {
   display: flex;
   align-items: center;
@@ -325,6 +358,8 @@ footer {
 }
 
 #info span { white-space: nowrap; }
+#midi-status.midi-active { color: #4f4; }
+#midi-status.midi-error  { color: #f66; }
 
 /* ── Sync measurement panel ──────────────────────────────────────────────── */
 #sync-panel {

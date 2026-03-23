@@ -4,6 +4,7 @@ export function setupUI({
   midiFiles,
   onSelect,
   onCustomFile,
+  onAudioFile,
   onPlay,
   onStop,
   onSeek,
@@ -19,9 +20,19 @@ export function setupUI({
   onSyncMeasureToggle,
   onVisualLead,
   onTempoScale,
+  onFftThreshold,
+  onFftTopN,
+  onFftLowMidi,
+  onFftHighMidi,
+  onFftGain,
+  onFftSmoothing,
+  onFftThresholdTilt,
+  onMicToggle,
+  onLiveMode,
 }) {
   const fileSelect      = document.getElementById('file-select');
   const fileInput       = document.getElementById('file-input');
+  const audioInput      = document.getElementById('audio-input');
   const btnPlay         = document.getElementById('btn-play');
   const btnStop         = document.getElementById('btn-stop');
   const btnAudio        = document.getElementById('btn-audio');
@@ -32,7 +43,7 @@ export function setupUI({
   const waveformSelect  = document.getElementById('waveform-select');
   const superSelect     = document.getElementById('super-select');
 
-  // Populate file selector
+  // Populate MIDI file selector
   midiFiles.forEach((f, i) => {
     const opt = document.createElement('option');
     opt.value = i;
@@ -42,6 +53,7 @@ export function setupUI({
 
   fileSelect.addEventListener('change', () => onSelect(Number(fileSelect.value)));
 
+  // Load custom MIDI file
   fileInput.addEventListener('change', () => {
     const file = fileInput.files[0];
     if (!file) return;
@@ -50,19 +62,18 @@ export function setupUI({
     reader.readAsArrayBuffer(file);
   });
 
-  btnPlay.addEventListener('click', () => {
-    const label = onPlay();
-    btnPlay.textContent = label;
+  // Load audio file (MP3 / WAV / OGG etc.)
+  audioInput.addEventListener('change', () => {
+    const file = audioInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => onAudioFile(e.target.result, file.name);
+    reader.readAsArrayBuffer(file);
   });
 
-  btnStop.addEventListener('click', () => {
-    onStop();
-    btnPlay.textContent = '▶ Play';
-  });
-
-  progress.addEventListener('input', () => {
-    onSeek(Number(progress.value));
-  });
+  btnPlay.addEventListener('click', () => { btnPlay.textContent = onPlay(); });
+  btnStop.addEventListener('click', () => { onStop(); btnPlay.textContent = '▶ Play'; });
+  progress.addEventListener('input', () => onSeek(Number(progress.value)));
 
   btnAudio.addEventListener('click', () => {
     const active = onAudioToggle();
@@ -76,12 +87,11 @@ export function setupUI({
     btnVisual.classList.toggle('active', active);
   });
 
-
-  // SF scale slider — log2 mapping: sfScale = 2^sliderValue
+  // SF scale — log2 mapping
   sfSlider.addEventListener('input', () => {
-    const sfScale = Math.pow(2, Number(sfSlider.value));
-    sfDisplay.textContent = sfScale.toFixed(2) + '×';
-    onSfScale(sfScale);
+    const v = Math.pow(2, Number(sfSlider.value));
+    sfDisplay.textContent = v.toFixed(2) + '×';
+    onSfScale(v);
   });
 
   waveformSelect.addEventListener('change', () => onWaveform(waveformSelect.value));
@@ -113,9 +123,65 @@ export function setupUI({
   const tempoSlider  = document.getElementById('tempo');
   const tempoDisplay = document.getElementById('tempo-display');
   tempoSlider.addEventListener('input', () => {
-    const scale = Math.pow(2, Number(tempoSlider.value));
-    tempoDisplay.textContent = scale.toFixed(2) + '×';
-    onTempoScale(scale);
+    const v = Math.pow(2, Number(tempoSlider.value));
+    tempoDisplay.textContent = v.toFixed(2) + '×';
+    onTempoScale(v);
+  });
+
+  const fftSlider  = document.getElementById('fft-threshold');
+  const fftDisplay = document.getElementById('fft-threshold-display');
+  fftSlider.addEventListener('input', () => {
+    const db = Number(fftSlider.value);
+    fftDisplay.textContent = `${db} dB`;
+    onFftThreshold(db);
+  });
+
+  const topNSlider  = document.getElementById('fft-top-n');
+  const topNDisplay = document.getElementById('fft-top-n-display');
+  topNSlider.addEventListener('input', () => {
+    const n = Number(topNSlider.value);
+    topNDisplay.textContent = n;
+    onFftTopN(n);
+  });
+
+  const lowMidiSlider  = document.getElementById('fft-low-midi');
+  const lowMidiDisplay = document.getElementById('fft-low-midi-display');
+  lowMidiSlider.addEventListener('input', () => {
+    const n = Number(lowMidiSlider.value);
+    lowMidiDisplay.textContent = midiToName(n);
+    onFftLowMidi(n);
+  });
+
+  const highMidiSlider  = document.getElementById('fft-high-midi');
+  const highMidiDisplay = document.getElementById('fft-high-midi-display');
+  highMidiSlider.addEventListener('input', () => {
+    const n = Number(highMidiSlider.value);
+    highMidiDisplay.textContent = midiToName(n);
+    onFftHighMidi(n);
+  });
+
+  const gainSlider  = document.getElementById('fft-gain');
+  const gainDisplay = document.getElementById('fft-gain-display');
+  gainSlider.addEventListener('input', () => {
+    const v = Math.pow(2, Number(gainSlider.value));
+    gainDisplay.textContent = v.toFixed(1) + '×';
+    onFftGain(v);
+  });
+
+  const smoothSlider  = document.getElementById('fft-smoothing');
+  const smoothDisplay = document.getElementById('fft-smoothing-display');
+  smoothSlider.addEventListener('input', () => {
+    const v = Number(smoothSlider.value);
+    smoothDisplay.textContent = v.toFixed(2);
+    onFftSmoothing(v);
+  });
+
+  const threshTiltSlider  = document.getElementById('fft-thresh-tilt');
+  const threshTiltDisplay = document.getElementById('fft-thresh-tilt-display');
+  threshTiltSlider.addEventListener('input', () => {
+    const v = Number(threshTiltSlider.value);
+    threshTiltDisplay.textContent = (v >= 0 ? '+' : '') + v.toFixed(1);
+    onFftThresholdTilt(v);
   });
 
   const visualLeadSlider  = document.getElementById('visual-lead');
@@ -135,13 +201,17 @@ export function setupUI({
     if (syncPanel) syncPanel.classList.toggle('visible', active);
   });
 
+  const btnLive = document.getElementById('btn-live');
+  btnLive.addEventListener('click', async () => {
+    const active = await onLiveMode();
+    btnLive.textContent = active ? 'Live: ON' : 'Live: OFF';
+    btnLive.classList.toggle('active', active);
+  });
+
   const btnFullscreen = document.getElementById('btn-fullscreen');
   btnFullscreen.addEventListener('click', () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
-    } else {
-      document.exitFullscreen();
-    }
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+    else document.exitFullscreen();
   });
   document.addEventListener('fullscreenchange', () => {
     const isFs = !!document.fullscreenElement;
@@ -149,68 +219,75 @@ export function setupUI({
     btnFullscreen.classList.toggle('active', isFs);
   });
 
-  // About modal
-  const aboutModal = document.getElementById('about-modal');
-  document.getElementById('btn-about').addEventListener('click', () => {
-    aboutModal.classList.add('visible');
-  });
-  document.getElementById('about-close').addEventListener('click', () => {
-    aboutModal.classList.remove('visible');
-  });
-  aboutModal.addEventListener('click', (e) => {
-    if (e.target === aboutModal) aboutModal.classList.remove('visible');
+  const btnMic = document.getElementById('btn-mic');
+  btnMic.addEventListener('click', () => {
+    const active = onMicToggle();
+    btnMic.classList.toggle('active', active);
+    btnMic.textContent = active ? '🎤 Mic: ON' : '🎤 Mic';
   });
 
+  // About modal
+  const aboutModal = document.getElementById('about-modal');
+  document.getElementById('btn-about').addEventListener('click', () => aboutModal.classList.add('visible'));
+  document.getElementById('about-close').addEventListener('click', () => aboutModal.classList.remove('visible'));
+  aboutModal.addEventListener('click', e => { if (e.target === aboutModal) aboutModal.classList.remove('visible'); });
+
   // Keyboard shortcuts
-  document.addEventListener('keydown', (e) => {
+  document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
     switch (e.code) {
       case 'Space': e.preventDefault(); btnPlay.click(); break;
-      case 'KeyA':  btnAudio.click();       break;
-      case 'KeyV':  btnVisual.click();      break;
-      case 'KeyF':  btnFullscreen.click();  break;
+      case 'KeyA':  btnAudio.click();      break;
+      case 'KeyV':  btnVisual.click();     break;
+      case 'KeyF':  btnFullscreen.click(); break;
     }
   });
 
   return {
-    setProgress(value, max) {
-      progress.max   = max;
-      progress.value = value;
-    },
+    setProgress(value, max)      { progress.max = max; progress.value = value; },
     setTimeDisplay(current, total) {
-      document.getElementById('time-display').textContent =
-        `${fmt(current)} / ${fmt(total)}`;
+      document.getElementById('time-display').textContent = `${fmt(current)} / ${fmt(total)}`;
     },
-    setKeyDisplay(keyName) {
-      document.getElementById('key-display').textContent = `Key: ${keyName}`;
-    },
+    setKeyDisplay(keyName)       { document.getElementById('key-display').textContent = `Key: ${keyName}`; },
     setNotesDisplay(notes) {
+      const top5 = notes.slice(0, 5);
       document.getElementById('notes-display').textContent =
-        notes.length
-          ? `Notes: ${notes.map(n => midiToName(n.midi)).join(' ')}`
-          : 'Notes: —';
+        top5.length ? `Notes: ${top5.map(n => midiToName(n.midi)).join(' ')}${notes.length > 5 ? ' …' : ''}` : 'Notes: —';
     },
-    setPlayButton(label) {
-      btnPlay.textContent = label;
+    setPlayButton(label)  { btnPlay.textContent = label; },
+    setColorMode(active)  { btnColor.textContent = active ? 'Color: ON' : 'Color: OFF'; btnColor.classList.toggle('active', active); },
+    setHyperbolic(active) { btnHyp.textContent   = active ? 'Hyp: ON'   : 'Hyp: OFF';   btnHyp.classList.toggle('active', active); },
+    setModeIndicator(mode) {
+      const el = document.getElementById('mode-indicator');
+      if (!el) return;
+      el.textContent = mode === 'audio' ? '🎵 AUDIO' : mode === 'mic' ? '🎤 MIC' : '🎹 MIDI';
+      el.dataset.mode = mode;
     },
-    setColorMode(active) {
-      btnColor.textContent = active ? 'Color: ON' : 'Color: OFF';
-      btnColor.classList.toggle('active', active);
+    setMidiStatus(names, error) {
+      const el = document.getElementById('midi-status');
+      if (!el) return;
+      if (error) {
+        el.textContent = `MIDI: ${error}`;
+        el.className = 'midi-error';
+      } else if (!names || names.length === 0) {
+        el.textContent = '';
+        el.className = '';
+      } else {
+        el.textContent = `MIDI: ${names.join(', ')}`;
+        el.className = 'midi-active';
+      }
     },
-    setHyperbolic(active) {
-      btnHyp.textContent = active ? 'Hyp: ON' : 'Hyp: OFF';
-      btnHyp.classList.toggle('active', active);
+    setLiveMode(active) {
+      btnLive.textContent = active ? 'Live: ON' : 'Live: OFF';
+      btnLive.classList.toggle('active', active);
     },
   };
 }
 
 function fmt(s) {
   const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60).toString().padStart(2, '0');
-  return `${m}:${sec}`;
+  return `${m}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
 }
 
 const NOTE_NAMES = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
-function midiToName(midi) {
-  return NOTE_NAMES[midi % 12] + Math.floor(midi / 12 - 1);
-}
+function midiToName(midi) { return NOTE_NAMES[midi % 12] + Math.floor(midi / 12 - 1); }
