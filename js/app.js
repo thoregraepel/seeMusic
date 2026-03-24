@@ -1,12 +1,14 @@
 import { MIDI_FILES, generateMidi, loadMidiFile } from './midi_files.js';
+import { AUDIO_FILES, loadAudioFilePath } from './audio_files.js';
 import { parseMidi } from './midi_parser.js';
 import { getActiveNotes } from './scheduler.js';
 import * as audio from './audio_engine.js';        // MIDI / Tone.js engine
 import * as mp3   from './mp3_engine.js';           // Audio file / Web Audio engine
-import { buildNoteRanges, getNotesFromFft } from './fft_analyzer.js';
+import { buildNoteRanges, getRawNoteLevels, applyThreshold } from './fft_analyzer.js';
 import { init as initVisual, render } from './visual_engine.js';
 import { setupUI } from './ui.js';
 import { initMidiInput, clearNotes } from './midi_input.js';
+import * as piano from './piano.js';
 
 // ── App state ─────────────────────────────────────────────────────────────────
 const state = {
@@ -19,8 +21,10 @@ const state = {
   waveform:         'sawtooth',  // 'sine' | 'square' | 'triangle' | 'sawtooth' | 'sawtooth2'
   superMode:        'sum',
   renderMode:       'circles',
+  gridArms:         2,
+  gridPhase:        0,   // degrees; converted to radians when passed to render
   hyperbolic:       false,
-  colorMode:        false,
+  colorMode:        true,
   tilt:             0,
   syncMeasure:      false,
   // midi-mode only
@@ -42,6 +46,7 @@ const state = {
   // live MIDI keyboard
   liveMode:         false,      // true = use live MIDI input instead of scheduled file
   liveNotes:        [],         // [{midi, velocity}] from MIDI keyboard
+  showPiano:        true,
 };
 
 // FFT analyser state (initialised once an audio file is loaded)
@@ -73,9 +78,25 @@ let rafId = null;
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   initVisual(document.getElementById('grating-canvas'));
+  piano.init(document.getElementById('piano-canvas'), (low, high) => {
+    state.fftLowMidi  = low;
+    state.fftHighMidi = high;
+    ui.setNoteRange(low, high);
+  });
 
   ui = setupUI({
     midiFiles:   MIDI_FILES,
+    audioFiles:  AUDIO_FILES,
+    onAudioSelect: async idx => {
+      const f = AUDIO_FILES[idx];
+      try {
+        const buf = await loadAudioFilePath(f.path);
+        await loadAudioBuffer(buf, f.name);
+      } catch (err) {
+        console.error('Preloaded audio load error:', err);
+        alert(`Could not load "${f.name}".\nFile may be missing — see audio_files.js for download instructions.`);
+      }
+    },
     onSelect:    idx  => loadAndSchedule(MIDI_FILES[idx]),
     onCustomFile:(buf, name) => loadAndSchedule({ type: 'buffer', buffer: buf, name }),
     onAudioFile: (buf, name) => loadAudioBuffer(buf, name),
@@ -93,6 +114,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     onWaveform:  v => { state.waveform   = v; },
     onSuperMode: v => { state.superMode  = v; },
     onRenderMode:v => { state.renderMode = v; },
+    onGridArms:  v => { state.gridArms  = v; },
+    onGridPhase: v => { state.gridPhase = v; },
     onTilt:      v => { state.tilt       = v; },
     onHyperbolic:  () => { state.hyperbolic = !state.hyperbolic; return state.hyperbolic; },
     onColorMode:   () => { state.colorMode  = !state.colorMode;  return state.colorMode;  },
@@ -146,6 +169,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           });
         return true;
       }
+    },
+    onPianoToggle: () => {
+      state.showPiano = !state.showPiano;
+      document.getElementById('piano-row').classList.toggle('hidden', !state.showPiano);
+      return state.showPiano;
     },
     onLiveMode: async () => {
       if (!state.liveMode) {
@@ -285,16 +313,21 @@ function handleSeek(seconds) {
 function startRaf() {
   if (rafId !== null) return;
   function frame() {
-    let t, active;
+    let t, active, pianoNotes;
 
     if (state.liveMode) {
-      t = 0;
-      active = state.liveNotes;
+      t          = 0;
+      pianoNotes = state.liveNotes;
+      active     = state.liveNotes.filter(n => n.midi >= state.fftLowMidi && n.midi <= state.fftHighMidi);
     } else if (state.inputMode === 'audio' || state.inputMode === 'mic') {
       t = state.inputMode === 'audio' ? mp3.getTime() : 0;
 
+      const rawLevels = fftNoteRanges
+        ? getRawNoteLevels(mp3.getAnalyserNode(), fftNoteRanges, fftFreqBuf)
+        : [];
+      pianoNotes = rawLevels;  // {midi, db} — piano draws absolute dBFS bars
       let notes = fftNoteRanges
-        ? getNotesFromFft(mp3.getAnalyserNode(), fftNoteRanges, fftFreqBuf, state.fftThreshold, state.fftThresholdTilt)
+        ? applyThreshold(rawLevels, state.fftThreshold, state.fftThresholdTilt)
         : [];
       notes = notes.filter(n => n.midi >= state.fftLowMidi && n.midi <= state.fftHighMidi);
       notes = notes.slice(0, state.fftTopN);
@@ -307,7 +340,8 @@ function startRaf() {
     } else {
       t = state.audioReady ? audio.getTime() : 0;
       const tLook = (t + state.visualLeadMs / 1000) * state.tempoScale;
-      active = getActiveNotes(state.allNotes, tLook);
+      pianoNotes = getActiveNotes(state.allNotes, tLook);
+      active     = pianoNotes.filter(n => n.midi >= state.fftLowMidi && n.midi <= state.fftHighMidi);
     }
 
     if (state.duration > 0 && !state.liveMode) {
@@ -327,8 +361,19 @@ function startRaf() {
       hyperbolic: state.hyperbolic,
       colorMode:  state.colorMode,
       tilt:       state.tilt,
+      gridArms:   state.gridArms,
+      gridPhase:  state.gridPhase * Math.PI / 180,
     });
     if (state.syncMeasure) updateSyncDisplay(performance.now() - syncT0);
+
+    if (state.showPiano) {
+      const isAudioMode = state.inputMode === 'audio' || state.inputMode === 'mic';
+      piano.draw(
+        pianoNotes, active, state.fftLowMidi, state.fftHighMidi, state.colorMode,
+        isAudioMode ? state.fftThreshold     : undefined,
+        isAudioMode ? state.fftThresholdTilt : undefined,
+      );
+    }
 
     // Auto-stop (not applicable in live or mic mode)
     if (!state.liveMode && state.inputMode !== 'mic') {

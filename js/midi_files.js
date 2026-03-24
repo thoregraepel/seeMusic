@@ -1,10 +1,16 @@
 // MIDI file registry and binary generators
 
 export const MIDI_FILES = [
+  // ── Original files ────────────────────────────────────────────────────────
   { name: 'Bach – Toccata & Fugue BWV 565',    type: 'file', path: 'midi/Bach-Toccata_Fugue_BWV-565.mid' },
   { name: 'Mike Oldfield – Tubular Bells',     type: 'file', path: 'midi/M.OLDFIELD. Tubular bells.mid'  },
   { name: 'The Beatles – Yesterday',           type: 'file', path: 'midi/THE BEATLES-Yesterday.mid'       },
   { name: 'Scott Joplin – The Entertainer',    type: 'file', path: 'midi/The_Entertainer.mid'             },
+  // ── Mutopia Project — CC0 / Public Domain ─────────────────────────────────
+  { name: 'Bach – Toccata & Fugue BWV 565 (Mutopia/PD)',    type: 'file', path: 'midi/bach_toccata_fugue_mutopia.mid'   },
+  { name: 'Joplin – The Entertainer (Mutopia/PD)',          type: 'file', path: 'midi/joplin_entertainer_mutopia.mid'   },
+  { name: 'Satie – Gymnopédie No.1 (Mutopia/PD)',          type: 'file', path: 'midi/satie_gymnopedie_1_mutopia.mid'   },
+  { name: 'Chopin – Nocturne Op.9 No.2 (Mutopia/CC BY-SA)', type: 'file', path: 'midi/chopin_nocturne_op9_2_mutopia.mid'},
   { name: 'C Major Scale (test)',              type: 'generated', generator: 'scale'          },
   { name: 'I–IV–V–I Chords (test)',            type: 'generated', generator: 'chords'         },
   { name: 'Chromatic Scale (test)',            type: 'generated', generator: 'chromatic'      },

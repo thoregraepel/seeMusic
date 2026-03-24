@@ -2,7 +2,9 @@
 
 export function setupUI({
   midiFiles,
+  audioFiles,
   onSelect,
+  onAudioSelect,
   onCustomFile,
   onAudioFile,
   onPlay,
@@ -17,6 +19,8 @@ export function setupUI({
   onTilt,
   onHyperbolic,
   onColorMode,
+  onGridArms,
+  onGridPhase,
   onSyncMeasureToggle,
   onVisualLead,
   onTempoScale,
@@ -29,8 +33,10 @@ export function setupUI({
   onFftThresholdTilt,
   onMicToggle,
   onLiveMode,
+  onPianoToggle,
 }) {
   const fileSelect      = document.getElementById('file-select');
+  const audioSelect     = document.getElementById('audio-select');
   const fileInput       = document.getElementById('file-input');
   const audioInput      = document.getElementById('audio-input');
   const btnPlay         = document.getElementById('btn-play');
@@ -53,6 +59,25 @@ export function setupUI({
 
   fileSelect.addEventListener('change', () => onSelect(Number(fileSelect.value)));
 
+  // Populate preloaded audio selector
+  const audioPlaceholder = document.createElement('option');
+  audioPlaceholder.value = '';
+  audioPlaceholder.textContent = 'Preloaded audio…';
+  audioPlaceholder.disabled = true;
+  audioPlaceholder.selected = true;
+  audioSelect.appendChild(audioPlaceholder);
+  audioFiles.forEach((f, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = f.name;
+    audioSelect.appendChild(opt);
+  });
+  audioSelect.addEventListener('change', () => {
+    const idx = Number(audioSelect.value);
+    onAudioSelect(idx);
+    audioSelect.value = '';  // reset to placeholder so re-selecting same item works
+  });
+
   // Load custom MIDI file
   fileInput.addEventListener('change', () => {
     const file = fileInput.files[0];
@@ -71,6 +96,37 @@ export function setupUI({
     reader.readAsArrayBuffer(file);
   });
 
+  // ── Mobile panel ──────────────────────────────────────────────────────────
+  const headerEl        = document.querySelector('header');
+  const mobileBackdrop  = document.getElementById('mobile-backdrop');
+  const mobileSettingsBtn = document.getElementById('mobile-settings-btn');
+  const mobilePlayBtn   = document.getElementById('mobile-play-btn');
+  const mobileStopBtn   = document.getElementById('mobile-stop-btn');
+
+  function openPanel() {
+    headerEl.classList.add('panel-open');
+    mobileBackdrop.classList.add('visible');
+    mobileSettingsBtn.textContent = '✕';
+  }
+  function closePanel() {
+    headerEl.classList.remove('panel-open');
+    mobileBackdrop.classList.remove('visible');
+    mobileSettingsBtn.textContent = '⚙';
+  }
+
+  mobileSettingsBtn.addEventListener('click', () =>
+    headerEl.classList.contains('panel-open') ? closePanel() : openPanel());
+  mobileBackdrop.addEventListener('click', closePanel);
+
+  function syncPlayLabel(label) {
+    btnPlay.textContent = label;
+    mobilePlayBtn.textContent = label.includes('⏸') ? '⏸' : '▶';
+  }
+
+  mobilePlayBtn.addEventListener('click', () => syncPlayLabel(onPlay()));
+  mobileStopBtn.addEventListener('click', () => { onStop(); syncPlayLabel('▶ Play'); });
+
+  // ── Desktop transport ──────────────────────────────────────────────────────
   btnPlay.addEventListener('click', () => { btnPlay.textContent = onPlay(); });
   btnStop.addEventListener('click', () => { onStop(); btnPlay.textContent = '▶ Play'; });
   progress.addEventListener('input', () => onSeek(Number(progress.value)));
@@ -97,6 +153,22 @@ export function setupUI({
   waveformSelect.addEventListener('change', () => onWaveform(waveformSelect.value));
   superSelect.addEventListener('change',    () => onSuperMode(superSelect.value));
   document.getElementById('render-mode-select').addEventListener('change', e => onRenderMode(e.target.value));
+
+  const gridArmsSlider  = document.getElementById('grid-arms');
+  const gridArmsDisplay = document.getElementById('grid-arms-display');
+  gridArmsSlider.addEventListener('input', () => {
+    const v = Number(gridArmsSlider.value);
+    gridArmsDisplay.textContent = v;
+    onGridArms(v);
+  });
+
+  const gridPhaseSlider  = document.getElementById('grid-phase');
+  const gridPhaseDisplay = document.getElementById('grid-phase-display');
+  gridPhaseSlider.addEventListener('input', () => {
+    const v = Number(gridPhaseSlider.value);
+    gridPhaseDisplay.textContent = `${v}°`;
+    onGridPhase(v);
+  });
 
   const tiltSlider  = document.getElementById('tilt');
   const tiltDisplay = document.getElementById('tilt-display');
@@ -144,21 +216,6 @@ export function setupUI({
     onFftTopN(n);
   });
 
-  const lowMidiSlider  = document.getElementById('fft-low-midi');
-  const lowMidiDisplay = document.getElementById('fft-low-midi-display');
-  lowMidiSlider.addEventListener('input', () => {
-    const n = Number(lowMidiSlider.value);
-    lowMidiDisplay.textContent = midiToName(n);
-    onFftLowMidi(n);
-  });
-
-  const highMidiSlider  = document.getElementById('fft-high-midi');
-  const highMidiDisplay = document.getElementById('fft-high-midi-display');
-  highMidiSlider.addEventListener('input', () => {
-    const n = Number(highMidiSlider.value);
-    highMidiDisplay.textContent = midiToName(n);
-    onFftHighMidi(n);
-  });
 
   const gainSlider  = document.getElementById('fft-gain');
   const gainDisplay = document.getElementById('fft-gain-display');
@@ -199,6 +256,13 @@ export function setupUI({
     btnSync.textContent = active ? 'Sync: ON' : 'Sync: OFF';
     btnSync.classList.toggle('active', active);
     if (syncPanel) syncPanel.classList.toggle('visible', active);
+  });
+
+  const btnPiano = document.getElementById('btn-piano');
+  btnPiano.addEventListener('click', () => {
+    const active = onPianoToggle();
+    btnPiano.textContent = active ? 'Piano: ON' : 'Piano: OFF';
+    btnPiano.classList.toggle('active', active);
   });
 
   const btnLive = document.getElementById('btn-live');
@@ -254,15 +318,17 @@ export function setupUI({
       document.getElementById('notes-display').textContent =
         top5.length ? `Notes: ${top5.map(n => midiToName(n.midi)).join(' ')}${notes.length > 5 ? ' …' : ''}` : 'Notes: —';
     },
-    setPlayButton(label)  { btnPlay.textContent = label; },
+    setPlayButton(label)  { btnPlay.textContent = label; mobilePlayBtn.textContent = label.includes('⏸') ? '⏸' : '▶'; },
     setColorMode(active)  { btnColor.textContent = active ? 'Color: ON' : 'Color: OFF'; btnColor.classList.toggle('active', active); },
     setHyperbolic(active) { btnHyp.textContent   = active ? 'Hyp: ON'   : 'Hyp: OFF';   btnHyp.classList.toggle('active', active); },
     setModeIndicator(mode) {
+      const text = mode === 'audio' ? '🎵 AUDIO' : mode === 'mic' ? '🎤 MIC' : '🎹 MIDI';
       const el = document.getElementById('mode-indicator');
-      if (!el) return;
-      el.textContent = mode === 'audio' ? '🎵 AUDIO' : mode === 'mic' ? '🎤 MIC' : '🎹 MIDI';
-      el.dataset.mode = mode;
+      if (el) { el.textContent = text; el.dataset.mode = mode; }
+      const pill = document.getElementById('mobile-mode-pill');
+      if (pill) { pill.textContent = text; pill.dataset.mode = mode; }
     },
+    setNoteRange(_low, _high) {},  // range is set via piano keyboard only
     setLoadedFile(name) {
       const el = document.getElementById('loaded-file');
       if (el) el.textContent = name || '';

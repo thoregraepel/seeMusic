@@ -1,7 +1,7 @@
 // Visual renderer — two modes:
 //   circles  concentric rings, phase varies with radius from canvas centre
-//   grid     vertical + horizontal gratings summed, both axes normalised by W
-//            so spacing is identical in x and y; phase = 0 at canvas centre
+//   grid     vertical gratings only (phase varies with x), normalised by W,
+//            phase = 0 at canvas centre
 // Each note maps to a spatial frequency:  sf = sfScale * SF_REF * 2^((midi−60)/12)
 // Multiple notes are combined via the chosen superposition mode.
 //
@@ -108,7 +108,9 @@ function superpose(waveVals, amps, mode) {
 // ── Main render ───────────────────────────────────────────────────────────────
 
 export function render(activeNotes, opts) {
-  const { showVisual, sfScale, waveform, superMode, renderMode, hyperbolic, tilt, colorMode } = opts;
+  syncSize();
+  const { showVisual, sfScale, waveform, superMode, renderMode, hyperbolic, tilt, colorMode,
+          gridArms, gridPhase } = opts;
   const W = canvas.width;
   const H = canvas.height;
 
@@ -139,72 +141,124 @@ export function render(activeNotes, opts) {
 
   if (renderMode === 'grid') {
     // ── Grid mode ─────────────────────────────────────────────────────────
-    const R   = Math.min(cx, cy);
-    const EPS = 1e-6;
+    // The canvas is divided into nArms equal wedge sectors. Each sector's
+    // grating phase is the projection of (dx,dy) onto that sector's arm
+    // direction. This guarantees N-fold rotational symmetry with continuous
+    // values at every sector boundary.
+    //
+    // Hyperbolic mode: warp is applied to the *Euclidean* radius (isotropic,
+    // same as circles mode), then used as a scale on the arm projection.
+    // phase = 2π · sf · (r_along / r_euc) · 2·atanh(r_euc / R)
+    //       = 2π · sf · cos(θ_from_arm) · 2·atanh(r_euc / R)
+    // This requires a per-pixel sqrt so a separate inner loop is used.
+    const nArms       = Math.max(1, gridArms);
+    const armPhase    = gridPhase;
+    const R           = Math.min(cx, cy);
+    const EPS         = 1e-6;
+    const sectorWidth = 2 * Math.PI / nArms;
+    const maxR        = Math.ceil(Math.sqrt(cx * cx + cy * cy)) + 1;
 
-    const xWave = activeNotes.map((_, i) => {
-      const row = new Float32Array(W);
-      for (let x = 0; x < W; x++) {
-        let phase;
-        if (hyperbolic) {
-          const u = (x - cx) / R;
-          phase = Math.abs(u) >= 1 ? 0 : 2 * Math.atanh(Math.min(Math.abs(u), 1 - EPS)) * Math.sign(u);
-        } else {
-          phase = (x - cx) / W;
-        }
-        row[x] = waveFn(2 * Math.PI * sfs[i] * phase);
-      }
-      return row;
-    });
-    const yWave = activeNotes.map((_, i) => {
-      const col = new Float32Array(H);
-      for (let y = 0; y < H; y++) {
-        let phase;
-        if (hyperbolic) {
-          const v = (y - cy) / R;
-          phase = Math.abs(v) >= 1 ? 0 : 2 * Math.atanh(Math.min(Math.abs(v), 1 - EPS)) * Math.sign(v);
-        } else {
-          phase = (y - cy) / W;
-        }
-        col[y] = waveFn(2 * Math.PI * sfs[i] * phase);
-      }
-      return col;
-    });
+    // Pre-compute arm direction vectors
+    const armCos = new Float64Array(nArms);
+    const armSin = new Float64Array(nArms);
+    for (let k = 0; k < nArms; k++) {
+      const α  = armPhase + k * sectorWidth;
+      armCos[k] = Math.cos(α);
+      armSin[k] = Math.sin(α);
+    }
 
     const waveVals = new Array(N);
-    const k = N > 0 ? 1 / N : 1;
+    const kNorm    = N > 0 ? 1 / N : 1;
 
-    for (let y = 0; y < H; y++) {
-      const dy   = y - cy;
-      const base = y * W * 4;
-      for (let x = 0; x < W; x++) {
-        const dx  = x - cx;
-        const idx = base + x * 4;
+    if (hyperbolic) {
+      // Euclidean-radius warp scale LUT: hScale[r] = 2·atanh(r/R) / r
+      // so that  phase = 2π · sf · r_along · hScale[r_euc]
+      // Limit as r→0: 2·atanh(r/R)/r → 2/R
+      const hScale = new Float64Array(maxR + 1);
+      hScale[0] = 2 / R;
+      for (let r = 1; r <= maxR; r++) {
+        const rn = r / R;
+        hScale[r] = rn < 1 ? 2 * Math.atanh(rn) / r : 0;
+      }
 
-        if (hyperbolic && (dx * dx + dy * dy) >= R * R) {
-          data[idx] = data[idx + 1] = data[idx + 2] = 128;
-          data[idx + 3] = 255;
-          continue;
-        }
-
-        if (colorMode) {
-          let sumR = 0, sumG = 0, sumB = 0;
-          for (let i = 0; i < N; i++) {
-            const aw = amps[i] * (xWave[i][x] + yWave[i][y]) * 0.5;
-            sumR += aw * noteRGB[i][0];
-            sumG += aw * noteRGB[i][1];
-            sumB += aw * noteRGB[i][2];
+      for (let y = 0; y < H; y++) {
+        const dy   = y - cy;
+        const base = y * W * 4;
+        for (let x = 0; x < W; x++) {
+          const dx  = x - cx;
+          const idx = base + x * 4;
+          const r2  = dx * dx + dy * dy;
+          if (r2 >= R * R) {
+            data[idx] = data[idx + 1] = data[idx + 2] = 128;
+            data[idx + 3] = 255;
+            continue;
           }
-          data[idx]     = Math.round(((sumR * k + 1) * 0.5) * 255);
-          data[idx + 1] = Math.round(((sumG * k + 1) * 0.5) * 255);
-          data[idx + 2] = Math.round(((sumB * k + 1) * 0.5) * 255);
-        } else {
-          for (let i = 0; i < N; i++)
-            waveVals[i] = (xWave[i][x] + yWave[i][y]) * 0.5;
-          const gray = Math.round(((superpose(waveVals, amps, superMode) + 1) * 0.5) * 255);
-          data[idx] = data[idx + 1] = data[idx + 2] = gray;
+          const rEuc  = Math.round(Math.sqrt(r2));
+          const scale = hScale[Math.min(rEuc, maxR)];
+
+          const θ     = Math.atan2(dy, dx);
+          const θ_off = ((θ - armPhase + Math.PI / nArms) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+          const k     = Math.min(Math.floor(θ_off / sectorWidth), nArms - 1);
+          // r_along · hScale = isotropic hyperbolic phase (unitless, like 2·atanh(r/R))
+          const rHyp  = Math.max(0, (dx * armCos[k] + dy * armSin[k]) * scale);
+
+          if (colorMode) {
+            let sumR = 0, sumG = 0, sumB = 0;
+            for (let i = 0; i < N; i++) {
+              const aw = amps[i] * waveFn(2 * Math.PI * sfs[i] * rHyp);
+              sumR += aw * noteRGB[i][0];
+              sumG += aw * noteRGB[i][1];
+              sumB += aw * noteRGB[i][2];
+            }
+            data[idx]     = Math.round(((sumR * kNorm + 1) * 0.5) * 255);
+            data[idx + 1] = Math.round(((sumG * kNorm + 1) * 0.5) * 255);
+            data[idx + 2] = Math.round(((sumB * kNorm + 1) * 0.5) * 255);
+          } else {
+            for (let i = 0; i < N; i++) waveVals[i] = waveFn(2 * Math.PI * sfs[i] * rHyp);
+            const gray = Math.round(((superpose(waveVals, amps, superMode) + 1) * 0.5) * 255);
+            data[idx] = data[idx + 1] = data[idx + 2] = gray;
+          }
+          data[idx + 3] = 255;
         }
-        data[idx + 3] = 255;
+      }
+    } else {
+      // Linear: pre-computed per-note LUT indexed by integer r_along (fast path)
+      const luts = activeNotes.map((_, i) => {
+        const lut = new Float32Array(maxR + 1);
+        for (let r = 0; r <= maxR; r++) lut[r] = waveFn(2 * Math.PI * sfs[i] * r / W);
+        return lut;
+      });
+
+      for (let y = 0; y < H; y++) {
+        const dy   = y - cy;
+        const base = y * W * 4;
+        for (let x = 0; x < W; x++) {
+          const dx  = x - cx;
+          const idx = base + x * 4;
+
+          const θ     = Math.atan2(dy, dx);
+          const θ_off = ((θ - armPhase + Math.PI / nArms) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+          const k     = Math.min(Math.floor(θ_off / sectorWidth), nArms - 1);
+          const rIdx  = Math.min(Math.max(0, Math.round(dx * armCos[k] + dy * armSin[k])), maxR);
+
+          if (colorMode) {
+            let sumR = 0, sumG = 0, sumB = 0;
+            for (let i = 0; i < N; i++) {
+              const aw = amps[i] * luts[i][rIdx];
+              sumR += aw * noteRGB[i][0];
+              sumG += aw * noteRGB[i][1];
+              sumB += aw * noteRGB[i][2];
+            }
+            data[idx]     = Math.round(((sumR * kNorm + 1) * 0.5) * 255);
+            data[idx + 1] = Math.round(((sumG * kNorm + 1) * 0.5) * 255);
+            data[idx + 2] = Math.round(((sumB * kNorm + 1) * 0.5) * 255);
+          } else {
+            for (let i = 0; i < N; i++) waveVals[i] = luts[i][rIdx];
+            const gray = Math.round(((superpose(waveVals, amps, superMode) + 1) * 0.5) * 255);
+            data[idx] = data[idx + 1] = data[idx + 2] = gray;
+          }
+          data[idx + 3] = 255;
+        }
       }
     }
 

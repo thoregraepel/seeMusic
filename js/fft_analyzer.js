@@ -41,26 +41,49 @@ export function buildNoteRanges(sampleRate, fftSize) {
  * @param {number}       thresholdTilt  — dB/octave slope; +3 raises threshold for high notes
  * @returns {Array<{midi, velocity}>} sorted loudest-first, velocity in [0,1]
  */
-export function getNotesFromFft(analyserNode, noteRanges, freqBuf, thresholdDb, thresholdTilt = 0) {
+/**
+ * Read the current FFT frame and return raw peak dBFS for every note.
+ * Call this once per frame; pass the result to applyThreshold() to avoid
+ * reading the FFT buffer twice.
+ *
+ * @returns {Array<{midi, db}>} one entry per MIDI note 21–108
+ */
+export function getRawNoteLevels(analyserNode, noteRanges, freqBuf) {
   analyserNode.getFloatFrequencyData(freqBuf);
   const maxBin = freqBuf.length - 1;
-
-  const notes = [];
+  const levels = [];
   for (const { midi, binLow, binHigh } of noteRanges) {
     let peak = -Infinity;
     const hi = Math.min(binHigh, maxBin);
     for (let b = binLow; b <= hi; b++) {
       if (freqBuf[b] > peak) peak = freqBuf[b];
     }
-    // Effective threshold rises/falls with pitch relative to C4 (midi 60)
+    levels.push({ midi, db: peak });
+  }
+  return levels;
+}
+
+/**
+ * Gate raw levels against a (possibly tilted) threshold and convert to velocity.
+ *
+ * @param {Array<{midi, db}>} rawLevels  — from getRawNoteLevels()
+ * @param {number} thresholdDb           — base threshold at C4
+ * @param {number} thresholdTilt         — dB/octave; +ve raises threshold for high notes
+ * @returns {Array<{midi, velocity}>} sorted loudest-first, velocity in [0,1]
+ */
+export function applyThreshold(rawLevels, thresholdDb, thresholdTilt = 0) {
+  const notes = [];
+  for (const { midi, db } of rawLevels) {
     const effThreshold = thresholdDb + thresholdTilt * (midi - 60) / 12;
-    const effRange     = Math.max(1, -effThreshold);  // dB span threshold → 0 dBFS
-    if (peak > effThreshold) {
-      notes.push({ midi, velocity: Math.min(1, (peak - effThreshold) / effRange) });
+    const effRange     = Math.max(1, -effThreshold);
+    if (db > effThreshold) {
+      notes.push({ midi, velocity: Math.min(1, (db - effThreshold) / effRange) });
     }
   }
-
-  // Sort loudest first so callers can easily take top-N
   notes.sort((a, b) => b.velocity - a.velocity);
   return notes;
+}
+
+export function getNotesFromFft(analyserNode, noteRanges, freqBuf, thresholdDb, thresholdTilt = 0) {
+  return applyThreshold(getRawNoteLevels(analyserNode, noteRanges, freqBuf), thresholdDb, thresholdTilt);
 }

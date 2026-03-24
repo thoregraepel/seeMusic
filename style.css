@@ -156,7 +156,7 @@ body {
 
 #app {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto 1fr auto;
   height: 100vh;
 }
 
@@ -336,6 +336,22 @@ button.toggle.active {
 
 #file-input { display: none; }
 
+#piano-row {
+  height: 130px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+#piano-row.hidden { display: none; }
+
+#piano-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 main {
   overflow: hidden;
   position: relative;
@@ -413,7 +429,8 @@ footer {
 
 /* ── Fullscreen ────────────────────────────────────────────────────────────── */
 :fullscreen header,
-:fullscreen footer {
+:fullscreen footer,
+:fullscreen #piano-row {
   display: none;
 }
 
@@ -423,10 +440,146 @@ footer {
 
 /* Safari / older Chrome */
 :-webkit-full-screen header,
-:-webkit-full-screen footer {
+:-webkit-full-screen footer,
+:-webkit-full-screen #piano-row {
   display: none;
 }
 
 :-webkit-full-screen #app {
   grid-template-rows: 1fr;
+}
+
+/* ── Mobile layout (≤ 768 px) ──────────────────────────────────────────────── */
+
+/* Hidden on desktop */
+#mobile-strip    { display: none; }
+#mobile-backdrop { display: none; }
+
+@media (max-width: 768px) {
+  /* Fixed compact header — clipped to strip height when panel is closed */
+  header {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 50;
+    padding: 0;
+    gap: 0;
+    max-height: 52px;
+    overflow: hidden;
+    transition: max-height 0.25s ease;
+  }
+
+  header.panel-open {
+    max-height: 80vh;
+    overflow-y: auto;
+    padding-bottom: 10px;
+  }
+
+  /* ── Mobile strip ── */
+  #mobile-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    min-height: 52px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .mobile-brand {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--accent);
+    flex: 1;
+    white-space: nowrap;
+  }
+
+  #mobile-mode-pill {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 7px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: #aaa;
+    white-space: nowrap;
+  }
+
+  #mobile-mode-pill[data-mode="audio"],
+  #mobile-mode-pill[data-mode="mic"] {
+    border-color: #4a9eff88;
+    color: var(--accent);
+  }
+
+  #mobile-transport { display: flex; gap: 6px; }
+
+  #mobile-play-btn {
+    background: var(--active);
+    border-color: var(--accent);
+    color: #fff;
+    font-size: 15px;
+    padding: 0 14px;
+    min-height: 36px;
+    border-radius: 4px;
+  }
+
+  #mobile-stop-btn {
+    font-size: 15px;
+    padding: 0 10px;
+    min-height: 36px;
+  }
+
+  #mobile-settings-btn {
+    font-size: 20px;
+    line-height: 1;
+    padding: 0 8px;
+    min-height: 36px;
+    background: none;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+  }
+
+  /* ── Desktop row 1 becomes part of the panel — hide decorative elements ── */
+  #header-row1 {
+    padding: 6px 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  #header-row1 h1,
+  #header-row1 #mode-indicator,
+  #header-row1 #loaded-file { display: none; }
+
+  #header-row1 #global-toggles { margin-left: 0; flex-wrap: wrap; }
+
+  /* Ctrl rows get side padding inside the panel */
+  .ctrl-row { padding: 6px 12px; }
+
+  /* ── App layout: header is out of flow (fixed), so grid has 3 rows ── */
+  #app {
+    padding-top: 52px;
+    grid-template-rows: auto 1fr auto;
+  }
+
+  /* ── Backdrop ── */
+  #mobile-backdrop {
+    position: fixed;
+    inset: 52px 0 0 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 49;
+    display: none;
+  }
+
+  #mobile-backdrop.visible { display: block; }
+
+  /* ── Touch targets ── */
+  button          { min-height: 40px; }
+  select          { min-height: 38px; font-size: 14px; }
+  input[type="range"] { min-height: 32px; }
+
+  /* Piano is shorter on mobile to give more canvas space */
+  #piano-row { height: 100px; }
+
+  /* Fullscreen: remove the padding-top (header hidden) */
+  :fullscreen #app,
+  :-webkit-full-screen #app { padding-top: 0; grid-template-rows: 1fr; }
 }
