@@ -389,3 +389,8 @@ function startRaf() {
   }
   rafId = requestAnimationFrame(frame);
 }
+
+// ── Service worker (PWA) ──────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/seeMusic/sw.js').catch(() => {});
+}
