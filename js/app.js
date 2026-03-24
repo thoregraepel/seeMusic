@@ -209,7 +209,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Demo button
   document.getElementById('btn-demo').addEventListener('click', async (e) => {
     e.stopPropagation();
-    document.documentElement.requestFullscreen().catch(() => {});
+    document.body.classList.add('app-fullscreen');
     await audio.initAudio();
     state.audioReady = true;
     overlay.style.display = 'none';

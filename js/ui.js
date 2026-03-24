@@ -273,14 +273,28 @@ export function setupUI({
   });
 
   const btnFullscreen = document.getElementById('btn-fullscreen');
+
+  function setPseudoFullscreen(on) {
+    document.body.classList.toggle('app-fullscreen', on);
+    btnFullscreen.textContent = on ? '✕ Exit Full' : '⛶ Fullscreen';
+    btnFullscreen.classList.toggle('active', on);
+  }
+
   btnFullscreen.addEventListener('click', () => {
-    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
-    else document.exitFullscreen();
+    // CSS pseudo-fullscreen: fills the browser window without triggering a
+    // macOS Space switch. Press Escape or click the button again to exit.
+    const willBeOn = !document.body.classList.contains('app-fullscreen');
+    setPseudoFullscreen(willBeOn);
   });
+
+  // Keep button in sync if native fullscreen is triggered another way (e.g. F11)
   document.addEventListener('fullscreenchange', () => {
-    const isFs = !!document.fullscreenElement;
-    btnFullscreen.textContent = isFs ? '✕ Exit Full' : '⛶ Fullscreen';
-    btnFullscreen.classList.toggle('active', isFs);
+    if (document.fullscreenElement) setPseudoFullscreen(true);
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.body.classList.contains('app-fullscreen')) {
+      setPseudoFullscreen(false);
+    }
   });
 
   const btnMic = document.getElementById('btn-mic');
