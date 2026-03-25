@@ -1,7 +1,10 @@
-// Visual renderer — two modes:
+// Visual renderer — three modes:
 //   circles  concentric rings, phase varies with radius from canvas centre
 //   grid     vertical gratings only (phase varies with x), normalised by W,
-//            phase = 0 at canvas centre
+//            phase = 0 at canvas centre; N-arm rotational symmetry optional
+//   star     angular grating: phase varies with θ around centre
+//            n = round(sf) ensures even 360° division for any waveform;
+//            n doubles per octave, preserving the pitch→frequency mapping
 // Each note maps to a spatial frequency:  sf = sfScale * SF_REF * 2^((midi−60)/12)
 // Multiple notes are combined via the chosen superposition mode.
 //
@@ -14,6 +17,30 @@ const SF_REF      = 8;    // cycles/canvas-width at C4 (midi 60) with sfScale=1
 const MIDI_REF    = 60;
 
 let canvas, ctx;
+
+// Cached per-pixel angular index map for star mode.
+// Rebuilt only when canvas dimensions change (atan2 is expensive per pixel).
+const STAR_BINS = 4096;
+let _angMap = null, _angMapW = 0, _angMapH = 0;
+
+function getAngularMap(W, H) {
+  if (_angMap && _angMapW === W && _angMapH === H) return _angMap;
+  const cx     = W / 2;
+  const cy     = H / 2;
+  const scale  = STAR_BINS / (2 * Math.PI);
+  _angMap  = new Uint16Array(W * H);
+  for (let y = 0; y < H; y++) {
+    const dy  = y - cy;
+    const row = y * W;
+    for (let x = 0; x < W; x++) {
+      const θ = Math.atan2(dy, x - cx);   // [-π, π]
+      _angMap[row + x] = Math.floor(((θ + Math.PI) * scale)) % STAR_BINS;
+    }
+  }
+  _angMapW = W;
+  _angMapH = H;
+  return _angMap;
+}
 
 export function init(canvasEl) {
   canvas = canvasEl;
@@ -313,6 +340,68 @@ export function render(activeNotes, opts) {
         data[idx]     = lutR[ri];
         data[idx + 1] = lutG[ri];
         data[idx + 2] = lutB[ri];
+        data[idx + 3] = 255;
+      }
+    }
+  }
+
+  if (renderMode === 'star') {
+    // ── Star mode ────────────────────────────────────────────────────────
+    // Grating varies with angle θ — equal-width angular wedges radiate from centre.
+    // n_i = round(sf_i) is the number of full grating cycles in 360°.
+    // Rounding to integer guarantees seamless tiling for any waveform:
+    //   waveFn(n·0) = waveFn(n·2π)  iff n ∈ ℤ.
+    // n doubles per octave (same ratio as sf), preserving the pitch mapping.
+    // The cached angular map avoids per-pixel atan2 in the render loop.
+    const R      = Math.min(cx, cy);
+    const R2     = R * R;
+    const angMap = getAngularMap(W, H);
+    const kNorm  = N > 0 ? 1 / N : 1;
+
+    // Per-note angular LUT: lut[k] = waveFn(n · 2π · k / STAR_BINS)
+    const angLuts = activeNotes.map((_, i) => {
+      const n   = Math.max(1, Math.round(sfs[i]));
+      const lut = new Float32Array(STAR_BINS);
+      for (let k = 0; k < STAR_BINS; k++) {
+        lut[k] = waveFn(n * 2 * Math.PI * k / STAR_BINS);
+      }
+      return lut;
+    });
+
+    const waveVals = new Array(N);
+
+    for (let y = 0; y < H; y++) {
+      const dy      = y - cy;
+      const base    = y * W * 4;
+      const mapRow  = y * W;
+      for (let x = 0; x < W; x++) {
+        const dx  = x - cx;
+        const idx = base + x * 4;
+
+        if (hyperbolic && (dx * dx + dy * dy) >= R2) {
+          data[idx] = data[idx + 1] = data[idx + 2] = 128;
+          data[idx + 3] = 255;
+          continue;
+        }
+
+        const k = angMap[mapRow + x];
+
+        if (colorMode) {
+          let sumR = 0, sumG = 0, sumB = 0;
+          for (let i = 0; i < N; i++) {
+            const aw = amps[i] * angLuts[i][k];
+            sumR += aw * noteRGB[i][0];
+            sumG += aw * noteRGB[i][1];
+            sumB += aw * noteRGB[i][2];
+          }
+          data[idx]     = Math.round(((sumR * kNorm + 1) * 0.5) * 255);
+          data[idx + 1] = Math.round(((sumG * kNorm + 1) * 0.5) * 255);
+          data[idx + 2] = Math.round(((sumB * kNorm + 1) * 0.5) * 255);
+        } else {
+          for (let i = 0; i < N; i++) waveVals[i] = angLuts[i][k];
+          const gray = Math.round(((superpose(waveVals, amps, superMode) + 1) * 0.5) * 255);
+          data[idx] = data[idx + 1] = data[idx + 2] = gray;
+        }
         data[idx + 3] = 255;
       }
     }
