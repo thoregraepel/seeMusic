@@ -117,6 +117,7 @@ export function setupUI({
   mobileSettingsBtn.addEventListener('click', () =>
     headerEl.classList.contains('panel-open') ? closePanel() : openPanel());
   mobileBackdrop.addEventListener('click', closePanel);
+  document.getElementById('mobile-exit-fs').addEventListener('click', () => setPseudoFullscreen(false));
 
   function syncPlayLabel(label) {
     btnPlay.textContent = label;
