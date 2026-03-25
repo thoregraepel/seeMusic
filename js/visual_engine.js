@@ -3,8 +3,10 @@
 //   grid     vertical gratings only (phase varies with x), normalised by W,
 //            phase = 0 at canvas centre; N-arm rotational symmetry optional
 //   star     angular grating: phase varies with θ around centre
-//            n = round(sf) ensures even 360° division for any waveform;
-//            n doubles per octave, preserving the pitch→frequency mapping
+//            base grating defined on [0, π] (one half-sector);
+//            gridArms sectors tile that pattern N times around the circle,
+//            each arm being a mirror-reflected copy of its neighbour.
+//            gridPhase rotates the whole pattern. sf is continuous (no rounding).
 // Each note maps to a spatial frequency:  sf = sfScale * SF_REF * 2^((midi−60)/12)
 // Multiple notes are combined via the chosen superposition mode.
 //
@@ -347,23 +349,32 @@ export function render(activeNotes, opts) {
 
   if (renderMode === 'star') {
     // ── Star mode ────────────────────────────────────────────────────────
-    // Grating varies with angle θ — equal-width angular wedges radiate from centre.
-    // n_i = round(sf_i) is the number of full grating cycles in 360°.
-    // Rounding to integer guarantees seamless tiling for any waveform:
-    //   waveFn(n·0) = waveFn(n·2π)  iff n ∈ ℤ.
-    // n doubles per octave (same ratio as sf), preserving the pitch mapping.
-    // The cached angular map avoids per-pixel atan2 in the render loop.
-    const R      = Math.min(cx, cy);
-    const R2     = R * R;
-    const angMap = getAngularMap(W, H);
-    const kNorm  = N > 0 ? 1 / N : 1;
+    // The grating is defined on [0, π] (a half-sector). With nArms arms the
+    // full circle is divided into nArms equal sectors of width 2π/nArms each.
+    // A pixel's angle is folded into its sector, then mapped to [0, π]:
+    //   θ_grating = (θ mod sectorWidth) * nArms / 2
+    // Adjacent sectors mirror each other, so nArms=2 gives left-right symmetry
+    // about the vertical axis; higher nArms give the corresponding n-fold pattern.
+    // gridPhase rotates the whole star. sf is continuous — no rounding.
+    const nArms      = Math.max(1, gridArms);
+    const sectorWidth = (2 * Math.PI) / nArms;
+    const halfNArms  = nArms / 2;
+    const R          = Math.min(cx, cy);
+    const R2         = R * R;
+    const angMap     = getAngularMap(W, H);
+    const kNorm      = N > 0 ? 1 / N : 1;
 
-    // Per-note angular LUT: lut[k] = waveFn(n · 2π · k / STAR_BINS)
+    // Per-note angular LUT: fold bin → θ_grating ∈ [0, π], evaluate waveFn.
+    // Bin k maps to θ_raw = k·2π/STAR_BINS − π (matches getAngularMap encoding).
+    const TWO_PI     = 2 * Math.PI;
+    const BIN_TO_RAD = TWO_PI / STAR_BINS;
     const angLuts = activeNotes.map((_, i) => {
-      const n   = Math.max(1, Math.round(sfs[i]));
       const lut = new Float32Array(STAR_BINS);
       for (let k = 0; k < STAR_BINS; k++) {
-        lut[k] = waveFn(n * 2 * Math.PI * k / STAR_BINS);
+        const θ_raw      = k * BIN_TO_RAD - Math.PI;
+        const θ_adj      = ((θ_raw - gridPhase) % TWO_PI + TWO_PI) % TWO_PI;
+        const θ_grating  = (θ_adj % sectorWidth) * halfNArms;  // [0, π)
+        lut[k] = waveFn(2 * sfs[i] * θ_grating);
       }
       return lut;
     });
