@@ -34,6 +34,8 @@ export function setupUI({
   onMicToggle,
   onLiveMode,
   onPianoToggle,
+  onAudioMidiFile,
+  onAudioMidiToggle,
 }) {
   const fileSelect      = document.getElementById('file-select');
   const audioSelect     = document.getElementById('audio-select');
@@ -94,6 +96,24 @@ export function setupUI({
     const reader = new FileReader();
     reader.onload = e => onAudioFile(e.target.result, file.name);
     reader.readAsArrayBuffer(file);
+  });
+
+  // Pair a MIDI file with the currently loaded audio (for MIDI-driven visualisation)
+  const midiPairInput = document.getElementById('midi-pair-input');
+  const btnMidiVis    = document.getElementById('btn-midi-vis');
+
+  midiPairInput.addEventListener('change', () => {
+    const file = midiPairInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => onAudioMidiFile(e.target.result, file.name);
+    reader.readAsArrayBuffer(file);
+  });
+
+  btnMidiVis.addEventListener('click', () => {
+    const active = onAudioMidiToggle();
+    btnMidiVis.textContent = active ? 'MIDI Vis: ON' : 'MIDI Vis: OFF';
+    btnMidiVis.classList.toggle('active', active);
   });
 
   // ── Mobile panel ──────────────────────────────────────────────────────────
@@ -365,6 +385,11 @@ export function setupUI({
     setLiveMode(active) {
       btnLive.textContent = active ? 'Live: ON' : 'Live: OFF';
       btnLive.classList.toggle('active', active);
+    },
+    setAudioMidiVis(active, available) {
+      btnMidiVis.disabled = !available;
+      btnMidiVis.textContent = active ? 'MIDI Vis: ON' : 'MIDI Vis: OFF';
+      btnMidiVis.classList.toggle('active', active);
     },
   };
 }

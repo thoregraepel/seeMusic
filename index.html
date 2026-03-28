@@ -108,6 +108,11 @@
           <input type="file" id="audio-input" accept="audio/*,.mp3,.wav,.ogg,.flac,.aac">
         </label>
         <button id="btn-mic" class="toggle">🎤 Mic</button>
+        <label id="midi-pair-label" title="Load a MIDI file to use for visualisation instead of FFT">
+          Pair MIDI
+          <input type="file" id="midi-pair-input" accept=".mid,.midi">
+        </label>
+        <button id="btn-midi-vis" class="toggle" disabled>MIDI Vis: OFF</button>
         <div class="ctrl-group">
           <label for="fft-threshold">Threshold</label>
           <input type="range" id="fft-threshold" min="-80" max="-20" step="1" value="-70">

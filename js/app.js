@@ -47,6 +47,9 @@ const state = {
   liveMode:         false,      // true = use live MIDI input instead of scheduled file
   liveNotes:        [],         // [{midi, velocity}] from MIDI keyboard
   showPiano:        true,
+  // audio + paired MIDI visualisation
+  audioMidiNotes:   [],         // notes from a MIDI file paired with the current audio file
+  audioMidiMode:    false,      // true = use audioMidiNotes for visuals instead of FFT
 };
 
 // FFT analyser state (initialised once an audio file is loaded)
@@ -175,6 +178,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('piano-row').classList.toggle('hidden', !state.showPiano);
       return state.showPiano;
     },
+    onAudioMidiFile: (buf, name) => loadAudioMidi(buf, name),
+    onAudioMidiToggle: () => {
+      if (!state.audioMidiNotes.length) return false;
+      state.audioMidiMode = !state.audioMidiMode;
+      return state.audioMidiMode;
+    },
     onLiveMode: async () => {
       if (!state.liveMode) {
         try {
@@ -262,6 +271,19 @@ async function loadAndSchedule(descriptor) {
   ui.setPlayButton('▶ Play');
 }
 
+// ── Audio + paired MIDI helpers ───────────────────────────────────────────────
+function loadAudioMidi(arrayBuffer, filename) {
+  let parsed;
+  try { parsed = parseMidi(arrayBuffer); }
+  catch (err) { console.error('MIDI pair parse error:', err); return; }
+
+  state.audioMidiNotes = parsed.allNotes;
+  state.audioMidiMode  = true;
+  ui.setAudioMidiVis(true, true);
+  ui.setKeyDisplay(parsed.keyName);
+  console.log(`Paired MIDI "${filename}": ${parsed.allNotes.length} notes, ${parsed.duration.toFixed(1)}s`);
+}
+
 // ── Audio file helpers ────────────────────────────────────────────────────────
 async function loadAudioBuffer(arrayBuffer, filename) {
   try {
@@ -322,21 +344,29 @@ function startRaf() {
     } else if (state.inputMode === 'audio' || state.inputMode === 'mic') {
       t = state.inputMode === 'audio' ? mp3.getTime() : 0;
 
-      const rawLevels = fftNoteRanges
-        ? getRawNoteLevels(mp3.getAnalyserNode(), fftNoteRanges, fftFreqBuf)
-        : [];
-      pianoNotes = rawLevels;  // {midi, db} — piano draws absolute dBFS bars
-      let notes = fftNoteRanges
-        ? applyThreshold(rawLevels, state.fftThreshold, state.fftThresholdTilt)
-        : [];
-      notes = notes.filter(n => n.midi >= state.fftLowMidi && n.midi <= state.fftHighMidi);
-      notes = notes.slice(0, state.fftTopN);
-      if (state.fftGain !== 1.0)
-        notes = notes.map(n => ({ ...n, velocity: Math.min(1, n.velocity * state.fftGain) }));
-      if (state.renderMode === 'grid' && state.superMode !== 'sum' && !state.colorMode) {
-        notes = notes.slice(0, 24);
+      if (state.audioMidiMode && state.inputMode === 'audio' && state.audioMidiNotes.length > 0) {
+        // MIDI-driven visualisation: use paired MIDI notes clocked to the audio position
+        const tLook = t + state.visualLeadMs / 1000;
+        pianoNotes  = getActiveNotes(state.audioMidiNotes, tLook);
+        active      = pianoNotes.filter(n => n.midi >= state.fftLowMidi && n.midi <= state.fftHighMidi);
+      } else {
+        // FFT visualisation (default audio mode)
+        const rawLevels = fftNoteRanges
+          ? getRawNoteLevels(mp3.getAnalyserNode(), fftNoteRanges, fftFreqBuf)
+          : [];
+        pianoNotes = rawLevels;  // {midi, db} — piano draws absolute dBFS bars
+        let notes = fftNoteRanges
+          ? applyThreshold(rawLevels, state.fftThreshold, state.fftThresholdTilt)
+          : [];
+        notes = notes.filter(n => n.midi >= state.fftLowMidi && n.midi <= state.fftHighMidi);
+        notes = notes.slice(0, state.fftTopN);
+        if (state.fftGain !== 1.0)
+          notes = notes.map(n => ({ ...n, velocity: Math.min(1, n.velocity * state.fftGain) }));
+        if (state.renderMode === 'grid' && state.superMode !== 'sum' && !state.colorMode) {
+          notes = notes.slice(0, 24);
+        }
+        active = notes;
       }
-      active = notes;
     } else {
       t = state.audioReady ? audio.getTime() : 0;
       const tLook = (t + state.visualLeadMs / 1000) * state.tempoScale;
@@ -367,11 +397,11 @@ function startRaf() {
     if (state.syncMeasure) updateSyncDisplay(performance.now() - syncT0);
 
     if (state.showPiano) {
-      const isAudioMode = state.inputMode === 'audio' || state.inputMode === 'mic';
+      const isRawAudio = (state.inputMode === 'audio' || state.inputMode === 'mic') && !state.audioMidiMode;
       piano.draw(
         pianoNotes, active, state.fftLowMidi, state.fftHighMidi, state.colorMode,
-        isAudioMode ? state.fftThreshold     : undefined,
-        isAudioMode ? state.fftThresholdTilt : undefined,
+        isRawAudio ? state.fftThreshold     : undefined,
+        isRawAudio ? state.fftThresholdTilt : undefined,
       );
     }
 
