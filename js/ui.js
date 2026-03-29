@@ -36,6 +36,7 @@ export function setupUI({
   onPianoToggle,
   onAudioMidiFile,
   onAudioMidiToggle,
+  onTranscribe,
 }) {
   const fileSelect      = document.getElementById('file-select');
   const audioSelect     = document.getElementById('audio-select');
@@ -97,6 +98,10 @@ export function setupUI({
     reader.onload = e => onAudioFile(e.target.result, file.name);
     reader.readAsArrayBuffer(file);
   });
+
+  // Transcribe loaded audio to MIDI using Basic Pitch (in-browser)
+  const btnTranscribe = document.getElementById('btn-transcribe');
+  btnTranscribe.addEventListener('click', () => onTranscribe());
 
   // Pair a MIDI file with the currently loaded audio (for MIDI-driven visualisation)
   const midiPairInput = document.getElementById('midi-pair-input');
@@ -390,6 +395,10 @@ export function setupUI({
       btnMidiVis.disabled = !available;
       btnMidiVis.textContent = active ? 'MIDI Vis: ON' : 'MIDI Vis: OFF';
       btnMidiVis.classList.toggle('active', active);
+    },
+    setTranscribeButton(label, disabled) {
+      btnTranscribe.textContent = label;
+      btnTranscribe.disabled    = disabled;
     },
   };
 }

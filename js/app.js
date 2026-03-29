@@ -9,6 +9,7 @@ import { init as initVisual, render } from './visual_engine.js';
 import { setupUI } from './ui.js';
 import { initMidiInput, clearNotes } from './midi_input.js';
 import * as piano from './piano.js';
+import { BasicPitchTranscriber } from './basic_pitch.js';
 
 // ── App state ─────────────────────────────────────────────────────────────────
 const state = {
@@ -179,6 +180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return state.showPiano;
     },
     onAudioMidiFile: (buf, name) => loadAudioMidi(buf, name),
+    onTranscribe: () => transcribeAudio(),
     onAudioMidiToggle: () => {
       if (!state.audioMidiNotes.length) return false;
       state.audioMidiMode = !state.audioMidiMode;
@@ -277,11 +279,42 @@ function loadAudioMidi(arrayBuffer, filename) {
   try { parsed = parseMidi(arrayBuffer); }
   catch (err) { console.error('MIDI pair parse error:', err); return; }
 
-  state.audioMidiNotes = parsed.allNotes;
+  _applyAudioMidiNotes(parsed.allNotes, parsed.keyName);
+  console.log(`Paired MIDI "${filename}": ${parsed.allNotes.length} notes, ${parsed.duration.toFixed(1)}s`);
+}
+
+function _applyAudioMidiNotes(notes, keyName = '—') {
+  state.audioMidiNotes = notes;
   state.audioMidiMode  = true;
   ui.setAudioMidiVis(true, true);
-  ui.setKeyDisplay(parsed.keyName);
-  console.log(`Paired MIDI "${filename}": ${parsed.allNotes.length} notes, ${parsed.duration.toFixed(1)}s`);
+  ui.setKeyDisplay(keyName);
+}
+
+let _transcriber = null;
+
+async function transcribeAudio() {
+  const buf = mp3.getAudioBuffer();
+  if (!buf) return;
+
+  // Cancel any in-flight transcription
+  if (_transcriber) { _transcriber.cancel(); _transcriber = null; }
+
+  _transcriber = new BasicPitchTranscriber();
+  ui.setTranscribeButton('Transcribing…  0%', true);
+
+  try {
+    const notes = await _transcriber.transcribe(buf, (p) => {
+      ui.setTranscribeButton(`Transcribing… ${Math.round(p * 100)}%`, true);
+    });
+    _transcriber = null;
+    _applyAudioMidiNotes(notes);
+    ui.setTranscribeButton('Transcribed ✓', false);
+    console.log(`Transcription complete: ${notes.length} notes`);
+  } catch (err) {
+    _transcriber = null;
+    ui.setTranscribeButton('Transcribe', false);
+    console.error('Transcription error:', err);
+  }
 }
 
 // ── Audio file helpers ────────────────────────────────────────────────────────
@@ -301,6 +334,7 @@ async function loadAudioBuffer(arrayBuffer, filename) {
     ui.setModeIndicator('audio');
     ui.setLoadedFile(filename);
     ui.setPlayButton('▶ Play');
+    ui.setTranscribeButton('Transcribe', false);
   } catch (err) {
     console.error('Audio load error:', err);
   }

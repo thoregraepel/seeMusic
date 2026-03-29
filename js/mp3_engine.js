@@ -37,6 +37,7 @@ export async function loadAudioFile(arrayBuffer) {
 }
 
 export function getAnalyserNode() { return micAnalyser ?? analyserNode; }
+export function getAudioBuffer()  { return audioBuffer; }
 export function getSampleRate()   { return audioCtx ? audioCtx.sampleRate : 44100; }
 export function isLoaded()        { return audioBuffer !== null; }
 export function setSmoothing(v)   {
