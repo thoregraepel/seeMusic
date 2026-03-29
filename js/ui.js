@@ -78,7 +78,7 @@ export function setupUI({
   audioSelect.addEventListener('change', () => {
     const idx = Number(audioSelect.value);
     onAudioSelect(idx);
-    audioSelect.value = '';  // reset to placeholder so re-selecting same item works
+    // Keep showing the selected name — don't reset to placeholder
   });
 
   // Load custom MIDI file

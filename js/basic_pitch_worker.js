@@ -8,7 +8,11 @@
 //   { type: 'done', notes: [{midi, velocity, time, duration}] }
 //   { type: 'error', message: string }
 
-importScripts('basic_pitch_bundle.js');
+try {
+  importScripts('basic_pitch_bundle.js');
+} catch (e) {
+  self.postMessage({ type: 'error', message: `Failed to load bundle: ${e.message}` });
+}
 
 const { BasicPitch, noteFramesToTime, addPitchBendsToNoteEvents, outputToNotesPoly } = BasicPitchLib;
 

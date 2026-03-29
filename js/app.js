@@ -312,32 +312,31 @@ async function transcribeAudio() {
     console.log(`Transcription complete: ${notes.length} notes`);
   } catch (err) {
     _transcriber = null;
-    ui.setTranscribeButton('Transcribe', false);
+    ui.setTranscribeButton('Transcribe ✗', false);
     console.error('Transcription error:', err);
+    alert(`Transcription failed: ${err.message}`);
   }
 }
 
 // ── Audio file helpers ────────────────────────────────────────────────────────
 async function loadAudioBuffer(arrayBuffer, filename) {
-  try {
-    const duration = await mp3.loadAudioFile(arrayBuffer);
+  const duration = await mp3.loadAudioFile(arrayBuffer);
 
-    fftNoteRanges = buildNoteRanges(mp3.getSampleRate(), 8192);
-    fftFreqBuf    = new Float32Array(mp3.getAnalyserNode().frequencyBinCount);
+  fftNoteRanges = buildNoteRanges(mp3.getSampleRate(), 8192);
+  fftFreqBuf    = new Float32Array(mp3.getAnalyserNode().frequencyBinCount);
 
-    state.inputMode = 'audio';
-    state.duration  = duration;
+  state.inputMode      = 'audio';
+  state.audioMidiMode  = false;
+  state.duration       = duration;
 
-    ui.setKeyDisplay('—');
-    ui.setProgress(0, duration);
-    ui.setTimeDisplay(0, duration);
-    ui.setModeIndicator('audio');
-    ui.setLoadedFile(filename);
-    ui.setPlayButton('▶ Play');
-    ui.setTranscribeButton('Transcribe', false);
-  } catch (err) {
-    console.error('Audio load error:', err);
-  }
+  ui.setKeyDisplay('—');
+  ui.setProgress(0, duration);
+  ui.setTimeDisplay(0, duration);
+  ui.setModeIndicator('audio');
+  ui.setLoadedFile(filename);
+  ui.setPlayButton('▶ Play');
+  ui.setTranscribeButton('Transcribe', false);
+  ui.setAudioMidiVis(false, state.audioMidiNotes.length > 0);
 }
 
 // ── Transport controls ────────────────────────────────────────────────────────
