@@ -51,12 +51,11 @@ export class BasicPitchTranscriber {
 
     await loadBundle();
 
-    const { BasicPitch, tf, noteFramesToTime, addPitchBendsToNoteEvents, outputToNotesPoly }
+    const { BasicPitch, ready, noteFramesToTime, addPitchBendsToNoteEvents, outputToNotesPoly }
       = window.BasicPitchLib;
 
-    // Force CPU backend so we don't hang on WebGL initialisation.
-    await tf.setBackend('cpu');
-    await tf.ready();
+    // Wait for the CPU backend to finish initialising (set in the bundle's entry.js).
+    await ready;
 
     const prepared = await this._prepare(audioBuffer);
 
