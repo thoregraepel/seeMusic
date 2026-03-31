@@ -102,6 +102,7 @@ self.onmessage = async ({ data }) => {
     self.postMessage({ type: 'done', notes });
 
   } catch (err) {
-    self.postMessage({ type: 'error', message: err.message });
+    console.error('[BasicPitch worker] error:', err);
+    self.postMessage({ type: 'error', message: err.message + (err.stack ? '\n' + err.stack : '') });
   }
 };
