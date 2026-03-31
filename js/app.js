@@ -39,8 +39,8 @@ const state = {
   // audio-mode only
   fftThreshold:     -70,        // dBFS; notes below this are ignored
   fftTopN:          6,          // keep only the N loudest FFT notes (contrast control)
-  fftLowMidi:       36,         // C2 — lowest pitch passed to renderer
-  fftHighMidi:      84,         // C6 — highest pitch passed to renderer
+  fftLowMidi:       24,         // C1 — lowest pitch passed to renderer
+  fftHighMidi:      96,         // C7 — highest pitch passed to renderer
   fftGain:          4.0,        // velocity multiplier before render (boosts contrast)
   fftSmoothing:     0.75,       // AnalyserNode smoothingTimeConstant (0 = jittery, 1 = sluggish)
   fftThresholdTilt: 3,          // dB/octave; +ve raises threshold for high notes (suppresses overtones)

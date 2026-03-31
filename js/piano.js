@@ -22,7 +22,7 @@ let canvas, ctx;
 let _onRangeChange = null;
 let _isDragging    = false;
 let _layout        = null;
-let _lastLow = 36, _lastHigh = 84;
+let _lastLow = 24, _lastHigh = 96;
 
 // midi → timestamp (ms) of last frame it was active (any note, before range filter)
 const _lastSeen = new Map();
