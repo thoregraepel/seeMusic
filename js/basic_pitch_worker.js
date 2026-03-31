@@ -1,9 +1,14 @@
-// Web Worker: resamples audio then runs Basic Pitch inference with TF.js CPU.
+// Web Worker: resamples audio then runs Basic Pitch inference.
 //
-// All work happens here so the main thread stays responsive.
-// TF.js calls document.createElement('canvas') at import time to probe WebGL;
-// we stub document so it returns null for every getContext() call, causing
-// TF.js to fall back to CPU cleanly (the bundle also calls tf.setBackend('cpu')).
+// Uses TF.js WASM backend (with SIMD if available) for ~5-10x speedup over
+// the pure-JS CPU backend.  Falls back to CPU if WASM fails to load.
+//
+// The WASM files (tfjs-backend-wasm*.wasm) must be served from js/ alongside
+// this worker.  setWasmPaths('./') resolves relative to this worker's URL, i.e.
+// the same js/ directory.
+//
+// TF.js probes for WebGL by calling document.createElement('canvas'); we stub
+// document so every getContext() returns null (no WebGL in workers).
 
 self.document = {
   createElement(tag) {
@@ -35,8 +40,28 @@ try {
   throw e;
 }
 
-const { BasicPitch, ready, noteFramesToTime, addPitchBendsToNoteEvents, outputToNotesPoly }
+const { tf, setWasmPaths, BasicPitch, noteFramesToTime, addPitchBendsToNoteEvents, outputToNotesPoly }
   = self.BasicPitchLib;
+
+// Initialise backend once, lazily (first transcription request)
+let _backendReady = null;
+function ensureBackend() {
+  if (_backendReady) return _backendReady;
+  _backendReady = (async () => {
+    // WASM files live in the same directory as this worker script
+    setWasmPaths('./');
+    try {
+      await tf.setBackend('wasm');
+      await tf.ready();
+      console.log('[BasicPitch worker] backend: wasm');
+    } catch (e) {
+      console.warn('[BasicPitch worker] WASM failed, falling back to cpu:', e.message);
+      await tf.setBackend('cpu');
+      await tf.ready();
+    }
+  })();
+  return _backendReady;
+}
 
 // Linear interpolation resample (mono Float32Array, any rate → 22050 Hz)
 function resampleTo22050(data, fromRate) {
@@ -59,11 +84,9 @@ self.onmessage = async ({ data }) => {
   if (data.type !== 'transcribe') return;
 
   try {
-    await ready;   // CPU backend initialised (set in bundle entry.js)
+    await ensureBackend();
 
     const { audioData, sampleRate } = data;
-
-    // Resample to 22050 Hz (what Basic Pitch expects)
     const resampled = resampleTo22050(audioData, sampleRate);
 
     const audioBuffer = {
