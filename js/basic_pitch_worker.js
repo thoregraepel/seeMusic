@@ -1,44 +1,68 @@
 // Web Worker: runs Basic Pitch inference off the main thread.
-// Loads the bundled IIFE (basic_pitch_bundle.js) which exposes BasicPitchLib.
 //
-// Messages in:
-//   { type: 'transcribe', audioData: Float32Array, sampleRate: number }
-// Messages out:
-//   { type: 'progress', value: 0..1 }
-//   { type: 'done', notes: [{midi, velocity, time, duration}] }
-//   { type: 'error', message: string }
+// TF.js calls document.createElement('canvas') at import time to probe WebGL.
+// document doesn't exist in workers, so we provide a minimal stub that makes
+// every getContext() call return null — TF.js then falls back to CPU cleanly.
+// The bundle already calls tf.setBackend('cpu') + exports tf.ready() from
+// entry.js, so no further backend wrangling is needed here.
+
+self.document = {
+  createElement(tag) {
+    if (tag === 'canvas') {
+      return {
+        getContext:          () => null,
+        addEventListener:    () => {},
+        removeEventListener: () => {},
+        style: {},
+        width: 0, height: 0,
+      };
+    }
+    return { style: {}, addEventListener: () => {}, removeEventListener: () => {} };
+  },
+  createElementNS:  (ns, tag) => self.document.createElement(tag),
+  querySelector:    () => null,
+  querySelectorAll: () => [],
+  getElementById:   () => null,
+  body: { appendChild: () => {}, removeChild: () => {}, contains: () => false },
+  head: { appendChild: () => {}, removeChild: () => {} },
+};
+
+// Some TF.js paths also check window.document
+if (typeof window === 'undefined') self.window = self;
 
 try {
   importScripts('basic_pitch_bundle.js');
 } catch (e) {
-  self.postMessage({ type: 'error', message: `Failed to load bundle: ${e.message}` });
+  self.postMessage({ type: 'error', message: `Bundle load failed: ${e.message}` });
+  throw e;
 }
 
-const { BasicPitch, noteFramesToTime, addPitchBendsToNoteEvents, outputToNotesPoly } = BasicPitchLib;
-
-const MODEL_URL = 'https://unpkg.com/@spotify/basic-pitch@1.0.1/model/model.json';
+const { BasicPitch, ready, noteFramesToTime, addPitchBendsToNoteEvents, outputToNotesPoly }
+  = self.BasicPitchLib;
 
 self.onmessage = async ({ data }) => {
   if (data.type !== 'transcribe') return;
 
   try {
+    // Wait for CPU backend to be ready (set in bundle's entry.js)
+    await ready;
+
     const { audioData, sampleRate } = data;
 
-    // Wrap the transferred Float32Array in an AudioBuffer-like object.
-    // BasicPitch.evaluateModel needs: { sampleRate, getChannelData(0) }
+    // BasicPitch expects an AudioBuffer-like object with sampleRate + getChannelData(0)
     const audioBuffer = {
       sampleRate,
       numberOfChannels: 1,
-      length: audioData.length,
+      length:   audioData.length,
       duration: audioData.length / sampleRate,
       getChannelData: () => audioData,
     };
 
-    const bp = new BasicPitch(MODEL_URL);
-
     const frames   = [];
     const onsets   = [];
     const contours = [];
+
+    const bp = new BasicPitch('https://unpkg.com/@spotify/basic-pitch@1.0.1/model/model.json');
 
     await bp.evaluateModel(
       audioBuffer,
@@ -46,19 +70,16 @@ self.onmessage = async ({ data }) => {
       (progress) => self.postMessage({ type: 'progress', value: progress }),
     );
 
-    const rawNotes   = outputToNotesPoly(frames, onsets, 0.25, 0.25, 5);
-    const withBends  = addPitchBendsToNoteEvents(contours, rawNotes);
-    const timed      = noteFramesToTime(withBends);
+    const rawNotes  = outputToNotesPoly(frames, onsets, 0.25, 0.25, 5);
+    const withBends = addPitchBendsToNoteEvents(contours, rawNotes);
+    const timed     = noteFramesToTime(withBends);
 
-    // Convert to {midi, velocity, time, duration} — same shape as midi_parser.js notes
     const notes = timed.map(n => ({
       midi:     n.pitchMidi,
       velocity: Math.round((n.amplitude ?? 0.8) * 127),
       time:     n.startTimeSeconds,
       duration: n.durationSeconds,
     }));
-
-    // Must be sorted by time for getActiveNotes() binary search
     notes.sort((a, b) => a.time - b.time);
 
     self.postMessage({ type: 'done', notes });
