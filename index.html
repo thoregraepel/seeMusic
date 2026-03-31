@@ -215,6 +215,12 @@
           <span id="tilt-display">0.0</span>
         </div>
         <button id="btn-color" class="toggle active" data-tip="Map each pitch class to a hue (C = red, +30° per semitone)">Color: ON</button>
+        <div class="dial-anchor">
+          <button id="btn-color-wheel" class="toggle" data-tip="Customise pitch-class → colour mapping">🎨 Wheel</button>
+          <div id="color-wheel-popover">
+            <div id="color-dial-mount"></div>
+          </div>
+        </div>
         <button id="btn-hyp" class="toggle" data-tip="Hyperbolic warp — compresses outer regions into a Poincaré-disk-like geometry">Hyp: OFF</button>
         <div class="ctrl-group" data-tip="How far ahead to look in the MIDI timeline — compensates for display latency">
           <label for="visual-lead">Visual lead</label>

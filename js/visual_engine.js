@@ -90,8 +90,12 @@ function hslToRgb(h) {
   return [r, g, b];
 }
 
-// Pitch class → hue: C=0°, C♯=30°, …, B=330°  (30° per semitone, full circle = octave)
-const PITCH_RGB = Array.from({ length: 12 }, (_, pc) => hslToRgb(pc * 30));
+// Pitch class → hue: C=0°, C♯=30°, …, B=330° by default.
+// hueOffset and hueDirection from render opts shift / mirror the mapping.
+function pitchRgb(midi, hueOffset, hueDirection) {
+  const hue = ((hueDirection * (midi % 12) * 30) + hueOffset + 3600) % 360;
+  return hslToRgb(hue);
+}
 
 // ── Superposition modes ───────────────────────────────────────────────────────
 //
@@ -139,7 +143,7 @@ function superpose(waveVals, amps, mode) {
 export function render(activeNotes, opts) {
   syncSize();
   const { showVisual, sfScale, waveform, superMode, renderMode, hyperbolic, tilt, colorMode,
-          gridArms, gridPhase } = opts;
+          gridArms, gridPhase, hueOffset = 0, hueDirection = 1 } = opts;
   const W = canvas.width;
   const H = canvas.height;
 
@@ -160,7 +164,7 @@ export function render(activeNotes, opts) {
   const sfs  = activeNotes.map(n => sfScale * SF_REF * Math.pow(2, (n.midi - MIDI_REF) / 12));
   const amps = activeNotes.map(n => Math.min(1, n.velocity * Math.pow(2, tilt * (n.midi - MIDI_REF) / 12)));
   // Per-note RGB colour from pitch class (used in color mode)
-  const noteRGB = colorMode ? activeNotes.map(n => PITCH_RGB[n.midi % 12]) : null;
+  const noteRGB = colorMode ? activeNotes.map(n => pitchRgb(n.midi, hueOffset, hueDirection)) : null;
 
   const imageData = ctx.createImageData(W, H);
   const data = imageData.data;

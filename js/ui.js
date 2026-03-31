@@ -19,6 +19,7 @@ export function setupUI({
   onTilt,
   onHyperbolic,
   onColorMode,
+  onColorWheel,
   onGridArms,
   onGridPhase,
   onSyncMeasureToggle,
@@ -210,6 +211,8 @@ export function setupUI({
     btnColor.textContent = active ? 'Color: ON' : 'Color: OFF';
     btnColor.classList.toggle('active', active);
   });
+
+  document.getElementById('btn-color-wheel').addEventListener('click', () => onColorWheel());
 
   const btnHyp = document.getElementById('btn-hyp');
   btnHyp.addEventListener('click', () => {

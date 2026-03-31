@@ -7,6 +7,7 @@ import * as mp3   from './mp3_engine.js';           // Audio file / Web Audio en
 import { buildNoteRanges, getRawNoteLevels, applyThreshold } from './fft_analyzer.js';
 import { init as initVisual, render } from './visual_engine.js';
 import { setupUI } from './ui.js';
+import { initDial } from './color_dial.js';
 import { initMidiInput, clearNotes } from './midi_input.js';
 import * as piano from './piano.js';
 import { BasicPitchTranscriber } from './basic_pitch.js';
@@ -26,6 +27,8 @@ const state = {
   gridPhase:        0,   // degrees; converted to radians when passed to render
   hyperbolic:       false,
   colorMode:        true,
+  hueOffset:        0,     // degrees [0, 360): which hue C maps to
+  hueDirection:     1,     // +1 = CW ascending pitch, -1 = CCW
   tilt:             0,
   syncMeasure:      false,
   // midi-mode only
@@ -186,6 +189,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.audioMidiMode = !state.audioMidiMode;
       return state.audioMidiMode;
     },
+    onColorWheel: () => {
+      const pop = document.getElementById('color-wheel-popover');
+      pop.classList.toggle('visible');
+    },
     onLiveMode: async () => {
       if (!state.liveMode) {
         try {
@@ -205,6 +212,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         return false;
       }
     },
+  });
+
+  // Colour-wheel dial
+  initDial(document.getElementById('color-dial-mount'), ({ offset, direction }) => {
+    state.hueOffset    = offset;
+    state.hueDirection = direction;
+  });
+
+  // Close colour-wheel popover when clicking outside it
+  document.addEventListener('click', e => {
+    const pop = document.getElementById('color-wheel-popover');
+    const btn = document.getElementById('btn-color-wheel');
+    if (pop.classList.contains('visible') && !pop.contains(e.target) && e.target !== btn) {
+      pop.classList.remove('visible');
+    }
   });
 
   // Overlay: click anywhere → init MIDI audio and load default file
@@ -422,10 +444,12 @@ function startRaf() {
       superMode:  state.superMode,
       renderMode: state.renderMode,
       hyperbolic: state.hyperbolic,
-      colorMode:  state.colorMode,
-      tilt:       state.tilt,
-      gridArms:   state.gridArms,
-      gridPhase:  state.gridPhase * Math.PI / 180,
+      colorMode:    state.colorMode,
+      hueOffset:    state.hueOffset,
+      hueDirection: state.hueDirection,
+      tilt:         state.tilt,
+      gridArms:     state.gridArms,
+      gridPhase:    state.gridPhase * Math.PI / 180,
     });
     if (state.syncMeasure) updateSyncDisplay(performance.now() - syncT0);
 
@@ -435,6 +459,7 @@ function startRaf() {
         pianoNotes, active, state.fftLowMidi, state.fftHighMidi, state.colorMode,
         isRawAudio ? state.fftThreshold     : undefined,
         isRawAudio ? state.fftThresholdTilt : undefined,
+        state.hueOffset, state.hueDirection,
       );
     }
 

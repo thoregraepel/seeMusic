@@ -54,7 +54,8 @@ export function init(canvasEl, onRangeChange) {
 // threshold   — (audio/mic only) base threshold dBFS; undefined in MIDI mode
 // thresholdTilt — dB/octave slope applied to threshold
 export function draw(allNotes, activeNotes, lowMidi, highMidi, colorMode,
-                     threshold = undefined, thresholdTilt = 0) {
+                     threshold = undefined, thresholdTilt = 0,
+                     hueOffset = 0, hueDirection = 1) {
   syncSize();
   if (!_layout) _layout = buildLayout();
   _lastLow  = lowMidi;
@@ -64,7 +65,7 @@ export function draw(allNotes, activeNotes, lowMidi, highMidi, colorMode,
   for (const n of allNotes)            _lastSeen.set(n.midi, now);
   for (const [midi, t] of _lastSeen)   if (now - t > DECAY_MS) _lastSeen.delete(midi);
 
-  render(allNotes, activeNotes, lowMidi, highMidi, colorMode, now, threshold, thresholdTilt);
+  render(allNotes, activeNotes, lowMidi, highMidi, colorMode, now, threshold, thresholdTilt, hueOffset, hueDirection);
 }
 
 // ── Resize ────────────────────────────────────────────────────────────────────
@@ -142,7 +143,11 @@ function handlePtr(e) {
 
 const DB_MIN = -90;  // dBFS floor for absolute bar display
 
-function render(allNotes, activeNotes, lowMidi, highMidi, colorMode, now, threshold, thresholdTilt) {
+function pitchHue(midi, offset, direction) {
+  return ((direction * (midi % 12) * 30) + offset + 3600) % 360;
+}
+
+function render(allNotes, activeNotes, lowMidi, highMidi, colorMode, now, threshold, thresholdTilt, hueOffset, hueDirection) {
   const { keys, barH, keyY } = _layout;
   const W = canvas.width;
   const H = canvas.height;
@@ -174,7 +179,7 @@ function render(allNotes, activeNotes, lowMidi, highMidi, colorMode, now, thresh
     if (bh > 0) {
       const by = barH - bh;
       ctx.fillStyle = colorMode
-        ? `hsl(${pc * 30},100%,${inRange ? 60 : 35}%)`
+        ? `hsl(${pitchHue(pc, hueOffset, hueDirection)},100%,${inRange ? 60 : 35}%)`
         : (inRange ? '#4a9eff' : '#2a5080');
       ctx.fillRect(k.x, by, k.w, bh);
     }
@@ -211,7 +216,7 @@ function render(allNotes, activeNotes, lowMidi, highMidi, colorMode, now, thresh
     const inRange = k.midi >= lowMidi && k.midi <= highMidi;
     const active  = activeMap.has(k.midi);
     ctx.fillStyle = active
-      ? (colorMode ? `hsl(${k.midi % 12 * 30},100%,65%)` : '#4a9eff')
+      ? (colorMode ? `hsl(${pitchHue(k.midi, hueOffset, hueDirection)},100%,65%)` : '#4a9eff')
       : (inRange ? '#ccc' : '#777');
     ctx.fillRect(k.x, k.y, k.w, k.h);
 
@@ -236,7 +241,7 @@ function render(allNotes, activeNotes, lowMidi, highMidi, colorMode, now, thresh
     const inRange = k.midi >= lowMidi && k.midi <= highMidi;
     const active  = activeMap.has(k.midi);
     ctx.fillStyle = active
-      ? (colorMode ? `hsl(${k.midi % 12 * 30},100%,40%)` : '#2268b0')
+      ? (colorMode ? `hsl(${pitchHue(k.midi, hueOffset, hueDirection)},100%,40%)` : '#2268b0')
       : (inRange ? '#1a1a1a' : '#444');
     ctx.fillRect(k.x, k.y, k.w, k.h);
 
