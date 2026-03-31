@@ -1,14 +1,12 @@
 // Web Worker: resamples audio then runs Basic Pitch inference.
 //
-// Uses TF.js WASM backend (with SIMD if available) for ~5-10x speedup over
-// the pure-JS CPU backend.  Falls back to CPU if WASM fails to load.
+// TF.js WASM backend (with SIMD if the browser supports it) is ~5-10x faster
+// than the pure-JS CPU backend.  setWasmPaths('./') is called inside
+// basic_pitch_bundle.js (at importScripts time) so the actual fetch for the
+// .wasm file resolves to js/ — the same directory as this worker.
 //
-// The WASM files (tfjs-backend-wasm*.wasm) must be served from js/ alongside
-// this worker.  setWasmPaths('./') resolves relative to this worker's URL, i.e.
-// the same js/ directory.
-//
-// TF.js probes for WebGL by calling document.createElement('canvas'); we stub
-// document so every getContext() returns null (no WebGL in workers).
+// TF.js probes WebGL by calling document.createElement('canvas'); we stub
+// document so every getContext() returns null, causing a clean CPU/WASM fallback.
 
 self.document = {
   createElement(tag) {
@@ -40,28 +38,8 @@ try {
   throw e;
 }
 
-const { tf, setWasmPaths, BasicPitch, noteFramesToTime, addPitchBendsToNoteEvents, outputToNotesPoly }
+const { BasicPitch, ready, noteFramesToTime, addPitchBendsToNoteEvents, outputToNotesPoly }
   = self.BasicPitchLib;
-
-// Initialise backend once, lazily (first transcription request)
-let _backendReady = null;
-function ensureBackend() {
-  if (_backendReady) return _backendReady;
-  _backendReady = (async () => {
-    // WASM files live in the same directory as this worker script
-    setWasmPaths('./');
-    try {
-      await tf.setBackend('wasm');
-      await tf.ready();
-      console.log('[BasicPitch worker] backend: wasm');
-    } catch (e) {
-      console.warn('[BasicPitch worker] WASM failed, falling back to cpu:', e.message);
-      await tf.setBackend('cpu');
-      await tf.ready();
-    }
-  })();
-  return _backendReady;
-}
 
 // Linear interpolation resample (mono Float32Array, any rate → 22050 Hz)
 function resampleTo22050(data, fromRate) {
@@ -84,7 +62,7 @@ self.onmessage = async ({ data }) => {
   if (data.type !== 'transcribe') return;
 
   try {
-    await ensureBackend();
+    await ready;   // WASM (or CPU fallback) backend initialised
 
     const { audioData, sampleRate } = data;
     const resampled = resampleTo22050(audioData, sampleRate);
