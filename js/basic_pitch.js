@@ -1,93 +1,87 @@
-// basic_pitch.js — runs Basic Pitch on the main thread using WebGL (via TF.js).
+// basic_pitch.js — transcribes an AudioBuffer using a Web Worker.
 //
-// The bundle is lazy-loaded on first use. TF.js auto-selects WebGL on the
-// main thread, which is 20-50x faster than CPU. model.executeAsync with
-// WebGL does async GPU readback between batches, so the event loop gets
-// turns and progress updates fire normally.
+// All heavy work (resampling + TF.js CPU inference) runs inside the worker
+// so the main thread stays responsive and progress updates fire normally.
 //
 // Usage:
 //   const t = new BasicPitchTranscriber();
 //   const notes = await t.transcribe(audioBuffer, fraction => {});
 //   // notes: [{midi, velocity, time, duration}]
 
-const MODEL_URL = 'https://unpkg.com/@spotify/basic-pitch@1.0.1/model/model.json';
-
-let _bundleReady = null;
-function loadBundle() {
-  if (_bundleReady) return _bundleReady;
-  _bundleReady = new Promise((resolve, reject) => {
-    if (window.BasicPitchLib) { resolve(); return; }
-    const script  = document.createElement('script');
-    script.src    = 'js/basic_pitch_bundle.js';
-    script.onload = resolve;
-    script.onerror = () => reject(new Error('Failed to load basic_pitch_bundle.js'));
-    document.head.appendChild(script);
-  });
-  return _bundleReady;
-}
-
 export class BasicPitchTranscriber {
   constructor() {
+    this._worker = null;
     this._cancelled = false;
   }
 
-  // Resample an AudioBuffer to 22050 Hz mono (what Basic Pitch expects).
-  async _prepare(audioBuffer) {
-    const TARGET_SR = 22050;
-    if (audioBuffer.sampleRate === TARGET_SR && audioBuffer.numberOfChannels === 1) {
-      return audioBuffer;
+  // Extract a mono Float32Array from any AudioBuffer (downmix to mono).
+  _extractMono(audioBuffer) {
+    const n = audioBuffer.length;
+    const ch = audioBuffer.numberOfChannels;
+    if (ch === 1) {
+      // Return a copy so we can transfer it to the worker
+      return audioBuffer.getChannelData(0).slice();
     }
-    const length  = Math.ceil(audioBuffer.duration * TARGET_SR);
-    const offline = new OfflineAudioContext(1, length, TARGET_SR);
-    const src     = offline.createBufferSource();
-    src.buffer    = audioBuffer;
-    src.connect(offline.destination);
-    src.start(0);
-    return offline.startRendering();
+    const out = new Float32Array(n);
+    for (let c = 0; c < ch; c++) {
+      const d = audioBuffer.getChannelData(c);
+      for (let i = 0; i < n; i++) out[i] += d[i];
+    }
+    const inv = 1 / ch;
+    for (let i = 0; i < n; i++) out[i] *= inv;
+    return out;
   }
 
   async transcribe(audioBuffer, onProgress = () => {}) {
     this._cancelled = false;
 
-    await loadBundle();
-    const { BasicPitch, ready, noteFramesToTime, addPitchBendsToNoteEvents, outputToNotesPoly }
-      = window.BasicPitchLib;
+    // Downmix on main thread (cheap, synchronous)
+    const mono = this._extractMono(audioBuffer);
+    const sampleRate = audioBuffer.sampleRate;
 
-    await ready;   // TF.js backend (WebGL or fallback) initialised
+    return new Promise((resolve, reject) => {
+      const worker = new Worker('js/basic_pitch_worker.js');
+      this._worker = worker;
 
-    const prepared = await this._prepare(audioBuffer);
-    if (this._cancelled) throw new Error('Cancelled');
+      worker.onmessage = ({ data }) => {
+        if (this._cancelled) {
+          worker.terminate();
+          this._worker = null;
+          reject(new Error('Cancelled'));
+          return;
+        }
+        if (data.type === 'progress') {
+          onProgress(data.value);
+        } else if (data.type === 'done') {
+          worker.terminate();
+          this._worker = null;
+          resolve(data.notes);
+        } else if (data.type === 'error') {
+          worker.terminate();
+          this._worker = null;
+          reject(new Error(data.message));
+        }
+      };
 
-    const frames   = [];
-    const onsets   = [];
-    const contours = [];
+      worker.onerror = (e) => {
+        worker.terminate();
+        this._worker = null;
+        reject(new Error(e.message || 'Worker error'));
+      };
 
-    const bp = new BasicPitch(MODEL_URL);
-    await bp.evaluateModel(
-      prepared,
-      (f, o, c) => { frames.push(...f); onsets.push(...o); contours.push(...c); },
-      (progress) => { if (!this._cancelled) onProgress(progress); },
-    );
-
-    if (this._cancelled) throw new Error('Cancelled');
-
-    const notes = noteFramesToTime(
-      addPitchBendsToNoteEvents(
-        contours,
-        outputToNotesPoly(frames, onsets, 0.25, 0.25, 5),
-      ),
-    ).map(n => ({
-      midi:     n.pitchMidi,
-      velocity: Math.round((n.amplitude ?? 0.8) * 127),
-      time:     n.startTimeSeconds,
-      duration: n.durationSeconds,
-    }));
-
-    notes.sort((a, b) => a.time - b.time);
-    return notes;
+      // Transfer the buffer to avoid copying it back
+      worker.postMessage(
+        { type: 'transcribe', audioData: mono, sampleRate },
+        [mono.buffer],
+      );
+    });
   }
 
   cancel() {
     this._cancelled = true;
+    if (this._worker) {
+      this._worker.terminate();
+      this._worker = null;
+    }
   }
 }

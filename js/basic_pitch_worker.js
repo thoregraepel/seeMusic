@@ -1,10 +1,9 @@
-// Web Worker: runs Basic Pitch inference off the main thread.
+// Web Worker: resamples audio then runs Basic Pitch inference with TF.js CPU.
 //
-// TF.js calls document.createElement('canvas') at import time to probe WebGL.
-// document doesn't exist in workers, so we provide a minimal stub that makes
-// every getContext() call return null — TF.js then falls back to CPU cleanly.
-// The bundle already calls tf.setBackend('cpu') + exports tf.ready() from
-// entry.js, so no further backend wrangling is needed here.
+// All work happens here so the main thread stays responsive.
+// TF.js calls document.createElement('canvas') at import time to probe WebGL;
+// we stub document so it returns null for every getContext() call, causing
+// TF.js to fall back to CPU cleanly (the bundle also calls tf.setBackend('cpu')).
 
 self.document = {
   createElement(tag) {
@@ -19,7 +18,7 @@ self.document = {
     }
     return { style: {}, addEventListener: () => {}, removeEventListener: () => {} };
   },
-  createElementNS:  (ns, tag) => self.document.createElement(tag),
+  createElementNS:  (_ns, tag) => self.document.createElement(tag),
   querySelector:    () => null,
   querySelectorAll: () => [],
   getElementById:   () => null,
@@ -27,7 +26,6 @@ self.document = {
   head: { appendChild: () => {}, removeChild: () => {} },
 };
 
-// Some TF.js paths also check window.document
 if (typeof window === 'undefined') self.window = self;
 
 try {
@@ -40,22 +38,40 @@ try {
 const { BasicPitch, ready, noteFramesToTime, addPitchBendsToNoteEvents, outputToNotesPoly }
   = self.BasicPitchLib;
 
+// Linear interpolation resample (mono Float32Array, any rate → 22050 Hz)
+function resampleTo22050(data, fromRate) {
+  const TARGET = 22050;
+  if (fromRate === TARGET) return data;
+  const ratio  = fromRate / TARGET;
+  const outLen = Math.ceil(data.length / ratio);
+  const out    = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const pos  = i * ratio;
+    const lo   = Math.floor(pos);
+    const hi   = Math.min(lo + 1, data.length - 1);
+    const frac = pos - lo;
+    out[i] = data[lo] * (1 - frac) + data[hi] * frac;
+  }
+  return out;
+}
+
 self.onmessage = async ({ data }) => {
   if (data.type !== 'transcribe') return;
 
   try {
-    // Wait for CPU backend to be ready (set in bundle's entry.js)
-    await ready;
+    await ready;   // CPU backend initialised (set in bundle entry.js)
 
     const { audioData, sampleRate } = data;
 
-    // BasicPitch expects an AudioBuffer-like object with sampleRate + getChannelData(0)
+    // Resample to 22050 Hz (what Basic Pitch expects)
+    const resampled = resampleTo22050(audioData, sampleRate);
+
     const audioBuffer = {
-      sampleRate,
+      sampleRate:       22050,
       numberOfChannels: 1,
-      length:   audioData.length,
-      duration: audioData.length / sampleRate,
-      getChannelData: () => audioData,
+      length:           resampled.length,
+      duration:         resampled.length / 22050,
+      getChannelData:   () => resampled,
     };
 
     const frames   = [];
