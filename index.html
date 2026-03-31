@@ -29,23 +29,47 @@
     <div id="about-content">
       <button id="about-close" aria-label="Close">✕</button>
       <h2>About seeMusic</h2>
-      <p>seeMusic was created by <strong>Thore Graepel</strong> and <strong>Claude</strong> (Anthropic's AI assistant) to make music visible. Each note becomes a spatial grating whose frequency matches its pitch — finer stripes for high notes, coarser for low. Superimposed gratings create interference patterns just as light waves do.</p>
+      <p>seeMusic was created by <strong>Thore Graepel</strong> and <strong>Claude</strong> (Anthropic's AI assistant) to make music visible. Each note becomes a spatial grating whose spatial frequency matches its pitch — finer stripes for high notes, coarser for low. Superimposed gratings create interference patterns just as overlapping light waves do.</p>
+
       <h3>MIDI mode</h3>
-      <p>Select a MIDI file from the dropdown or load your own.</p>
+      <p>Select a preloaded MIDI file from the dropdown or click <strong>Load MIDI</strong> to use your own. Use <strong>Tempo</strong> to speed up or slow down playback. Connect a MIDI keyboard and enable <strong>Live</strong> to visualise what you play in real time.</p>
+
       <h3>Audio mode</h3>
-      <p>Load any MP3, WAV, or OGG file with <strong>Load Audio</strong>. The app analyses the real-time FFT of the audio and maps all 88 piano notes (A0–C8) to gratings, weighted by their loudness. Use the <strong>FFT Threshold</strong> slider to filter out background noise.</p>
-      <h3>Live mode</h3>
-      <p>Connect a MIDI keyboard via USB and click <strong>Live</strong> to visualise what you play in real time.</p>
+      <p>Click <strong>Load Audio</strong> to open an MP3, WAV, OGG, or FLAC file. The audio is analysed in real time using an FFT, mapping all 88 piano keys (A0–C8) to gratings weighted by loudness.</p>
+      <ul>
+        <li><strong>Threshold</strong> — minimum loudness (dBFS) for a note to appear. The dashed line on the piano bar chart shows the current threshold.</li>
+        <li><strong>Tilt</strong> — raises the threshold for high notes, reducing overtone clutter.</li>
+        <li><strong>Top</strong> — maximum number of simultaneous notes shown.</li>
+        <li><strong>Gain</strong> — amplifies note energies before mapping to brightness.</li>
+        <li><strong>Smooth</strong> — temporal smoothing; higher values slow down the response.</li>
+      </ul>
+      <p>For a cleaner visualisation you can pair the audio with MIDI note events instead of using the FFT:</p>
+      <ul>
+        <li><strong>Pair MIDI</strong> — load a matching .mid file; enable <strong>MIDI Vis</strong> to use it.</li>
+        <li><strong>Transcribe</strong> — auto-transcribe the loaded audio to MIDI in the browser using <em>Basic Pitch</em> (Spotify's neural pitch detector). Processing takes roughly as long as the audio file; the result is cached until you load new audio.</li>
+      </ul>
+
       <h3>Microphone mode</h3>
-      <p>Click <strong>🎤 Mic</strong> to visualise live audio from your microphone.</p>
+      <p>Click <strong>🎤 Mic</strong> to visualise live audio from your microphone using the same FFT pipeline as Audio mode.</p>
+
+      <h3>Render modes</h3>
+      <ul>
+        <li><strong>Circles</strong> — each note produces concentric rings whose spacing reflects its pitch.</li>
+        <li><strong>Grid</strong> — each note produces a set of parallel lines. Use <strong>Arms</strong> to set how many line directions are overlaid and <strong>Phase</strong> to rotate them.</li>
+        <li><strong>Star</strong> — radial sectors tiled around the centre. <strong>Arms</strong> sets the number of sectors; adjacent sectors mirror each other for 2 arms, giving bilateral symmetry. <strong>Phase</strong> rotates the whole pattern.</li>
+      </ul>
+
       <h3>Visual controls</h3>
       <ul>
-        <li>In <strong>colour mode</strong> each pitch class maps to a hue (C&nbsp;=&nbsp;red, +30° per semitone).</li>
-        <li><strong>Hyperbolic mode</strong> warps the geometry with a tanh mapping (Poincaré-disk-like).</li>
-        <li><strong>Waveform</strong> changes the grating profile: sine, square, triangle, or sawtooth.</li>
-        <li><strong>Superposition</strong> controls how gratings combine: sum, product, or max.</li>
-        <li><strong>Spectral tilt</strong> weights amplitudes by pitch, emphasising highs or lows.</li>
+        <li><strong>SF Scale</strong> — zooms all gratings in (coarser) or out (finer) uniformly.</li>
+        <li><strong>Waveform</strong> — grating profile: Sine (smooth), Square (sharp edges), Triangle, or Sawtooth.</li>
+        <li><strong>Superposition</strong> — how multiple gratings combine: Sum (additive mix), Product (masking), or Max (loudest wins).</li>
+        <li><strong>Tilt</strong> — spectral tilt: positive values amplify high notes, negative values amplify lows.</li>
+        <li><strong>Color</strong> — maps each pitch class to a hue (C = red, +30° per semitone).</li>
+        <li><strong>Hyp</strong> — hyperbolic warp: applies a tanh mapping that compresses the outer regions into a Poincaré-disk-like geometry.</li>
+        <li><strong>Visual lead</strong> — how far ahead to look in the MIDI timeline, compensating for display latency.</li>
       </ul>
+
       <h3>Keyboard shortcuts</h3>
       <p><kbd>Space</kbd> Play / Pause &nbsp;·&nbsp; <kbd>A</kbd> Toggle audio &nbsp;·&nbsp; <kbd>V</kbd> Toggle visual &nbsp;·&nbsp; <kbd>F</kbd> Fullscreen</p>
       <p class="warning">⚠ <strong>Photosensitivity warning:</strong> seeMusic produces rapidly changing visual patterns that may trigger seizures in people with photosensitive epilepsy or similar conditions. Use with caution or turn off the visual display if sensitive.</p>
@@ -72,69 +96,69 @@
         <span id="mode-indicator" data-mode="midi">🎹 MIDI</span>
         <span id="loaded-file"></span>
         <div id="global-toggles">
-          <button id="btn-audio" class="toggle active">Audio: ON</button>
-          <button id="btn-visual" class="toggle active">Visual: ON</button>
-          <button id="btn-piano" class="toggle active">Piano: ON</button>
-          <button id="btn-sync" class="toggle">Sync: OFF</button>
-          <button id="btn-fullscreen" class="toggle">⛶ Fullscreen</button>
-          <button id="btn-about">? About</button>
+          <button id="btn-audio" class="toggle active" data-tip="Toggle audio playback (A)">Audio: ON</button>
+          <button id="btn-visual" class="toggle active" data-tip="Toggle the grating visualisation (V)">Visual: ON</button>
+          <button id="btn-piano" class="toggle active" data-tip="Toggle the piano keyboard display">Piano: ON</button>
+          <button id="btn-sync" class="toggle" data-tip="Sync visual playback tempo to audio analysis">Sync: OFF</button>
+          <button id="btn-fullscreen" class="toggle" data-tip="Enter fullscreen mode (F)">⛶ Fullscreen</button>
+          <button id="btn-about" data-tip="Show documentation and keyboard shortcuts">? About</button>
         </div>
       </div>
 
       <!-- Row 2: MIDI -->
       <div class="ctrl-row" id="row-midi">
         <span class="section-label midi-label">MIDI</span>
-        <select id="file-select"></select>
-        <label id="upload-label" title="Load a MIDI file">
+        <select id="file-select" data-tip="Select a preloaded MIDI file"></select>
+        <label id="upload-label" data-tip="Load your own .mid or .midi file">
           Load MIDI
           <input type="file" id="file-input" accept=".mid,.midi">
         </label>
-        <button id="btn-play">▶ Play</button>
-        <button id="btn-stop">■ Stop</button>
-        <div class="ctrl-group">
+        <button id="btn-play" data-tip="Play or pause (Space)">▶ Play</button>
+        <button id="btn-stop" data-tip="Stop and rewind to start">■ Stop</button>
+        <div class="ctrl-group" data-tip="Playback speed multiplier">
           <label for="tempo">Tempo</label>
           <input type="range" id="tempo" min="-1" max="1" step="0.05" value="0">
           <span id="tempo-display">1.00×</span>
         </div>
-        <button id="btn-live" class="toggle">Live: OFF</button>
+        <button id="btn-live" class="toggle" data-tip="Visualise a connected MIDI keyboard in real time">Live: OFF</button>
       </div>
 
       <!-- Row 3: Audio -->
       <div class="ctrl-row" id="row-audio">
         <span class="section-label audio-label">AUDIO</span>
-        <select id="audio-select"></select>
-        <label id="audio-upload-label" title="Load an MP3, WAV or OGG file">
+        <select id="audio-select" data-tip="Select a preloaded audio file"></select>
+        <label id="audio-upload-label" data-tip="Load an MP3, WAV, OGG, or FLAC file">
           Load Audio
           <input type="file" id="audio-input" accept="audio/*,.mp3,.wav,.ogg,.flac,.aac">
         </label>
-        <button id="btn-mic" class="toggle">🎤 Mic</button>
-        <label id="midi-pair-label" title="Load a MIDI file to use for visualisation instead of FFT">
+        <button id="btn-mic" class="toggle" data-tip="Visualise live microphone input using FFT">🎤 Mic</button>
+        <label id="midi-pair-label" data-tip="Load a matching MIDI file to use instead of FFT for visualisation">
           Pair MIDI
           <input type="file" id="midi-pair-input" accept=".mid,.midi">
         </label>
-        <button id="btn-transcribe" disabled title="Transcribe the loaded audio file to MIDI using Basic Pitch">Transcribe</button>
-        <button id="btn-midi-vis" class="toggle" disabled>MIDI Vis: OFF</button>
-        <div class="ctrl-group">
+        <button id="btn-transcribe" disabled data-tip="Auto-transcribe the loaded audio to MIDI in the browser using Basic Pitch (Spotify's neural pitch detector). Takes roughly as long as the audio file.">Transcribe</button>
+        <button id="btn-midi-vis" class="toggle" disabled data-tip="Switch between FFT visualisation and the paired / transcribed MIDI">MIDI Vis: OFF</button>
+        <div class="ctrl-group" data-tip="Minimum loudness (dBFS) for a note to appear. Shown as a dashed line on the piano bar chart.">
           <label for="fft-threshold">Threshold</label>
           <input type="range" id="fft-threshold" min="-80" max="-20" step="1" value="-70">
           <span id="fft-threshold-display">-70 dB</span>
         </div>
-        <div class="ctrl-group">
+        <div class="ctrl-group" data-tip="Maximum number of simultaneous notes shown">
           <label for="fft-top-n">Top</label>
           <input type="range" id="fft-top-n" min="1" max="88" step="1" value="6">
           <span id="fft-top-n-display">6</span>
         </div>
-        <div class="ctrl-group">
+        <div class="ctrl-group" data-tip="Amplify note energies before mapping to grating brightness">
           <label for="fft-gain">Gain</label>
           <input type="range" id="fft-gain" min="0" max="4" step="0.1" value="2">
           <span id="fft-gain-display">4.0×</span>
         </div>
-        <div class="ctrl-group">
+        <div class="ctrl-group" data-tip="Temporal smoothing — higher values give a smoother but slower response">
           <label for="fft-smoothing">Smooth</label>
           <input type="range" id="fft-smoothing" min="0" max="0.99" step="0.01" value="0.75">
           <span id="fft-smoothing-display">0.75</span>
         </div>
-        <div class="ctrl-group">
+        <div class="ctrl-group" data-tip="Tilt the threshold line — positive values raise the bar for high notes, reducing overtone clutter">
           <label for="fft-thresh-tilt">Tilt</label>
           <input type="range" id="fft-thresh-tilt" min="-6" max="12" step="0.5" value="3">
           <span id="fft-thresh-tilt-display">+3.0</span>
@@ -144,12 +168,12 @@
       <!-- Row 4: Visual -->
       <div class="ctrl-row" id="row-visual">
         <span class="section-label visual-label">VISUAL</span>
-        <div class="ctrl-group">
+        <div class="ctrl-group" data-tip="Spatial frequency scale — zooms all gratings in or out uniformly">
           <label for="sf-scale">SF Scale</label>
           <input type="range" id="sf-scale" min="-2" max="2" step="0.05" value="0">
           <span id="sf-scale-display">1.00×</span>
         </div>
-        <div class="ctrl-group">
+        <div class="ctrl-group" data-tip="Grating profile: Sine (smooth), Square (hard edges), Triangle, or Sawtooth">
           <label for="waveform-select">Waveform</label>
           <select id="waveform-select">
             <option value="sine">Sine</option>
@@ -159,7 +183,7 @@
             <option value="sawtooth2">Sawtooth ↓</option>
           </select>
         </div>
-        <div class="ctrl-group">
+        <div class="ctrl-group" data-tip="Render geometry: Circles (concentric rings), Grid (parallel lines), or Star (radial sectors)">
           <label for="render-mode-select">Mode</label>
           <select id="render-mode-select">
             <option value="circles">Circles</option>
@@ -167,17 +191,17 @@
             <option value="star">Star</option>
           </select>
         </div>
-        <div class="ctrl-group">
+        <div class="ctrl-group" data-tip="Grid: number of line directions. Star: number of radial sectors (2 = bilateral symmetry)">
           <label for="grid-arms">Arms</label>
           <input type="range" id="grid-arms" min="1" max="12" step="1" value="2">
           <span id="grid-arms-display">2</span>
         </div>
-        <div class="ctrl-group">
+        <div class="ctrl-group" data-tip="Rotation angle of the grid or star pattern">
           <label for="grid-phase">Phase</label>
           <input type="range" id="grid-phase" min="0" max="359" step="1" value="0">
           <span id="grid-phase-display">0°</span>
         </div>
-        <div class="ctrl-group">
+        <div class="ctrl-group" data-tip="How multiple gratings combine: Sum (additive), Product (each masks the others), Max (loudest note wins)">
           <label for="super-select">Superposition</label>
           <select id="super-select">
             <option value="sum">Sum</option>
@@ -185,14 +209,14 @@
             <option value="max">Max</option>
           </select>
         </div>
-        <div class="ctrl-group">
+        <div class="ctrl-group" data-tip="Spectral tilt — positive values amplify high notes, negative values amplify lows">
           <label for="tilt">Tilt</label>
           <input type="range" id="tilt" min="-2" max="2" step="0.1" value="0">
           <span id="tilt-display">0.0</span>
         </div>
-        <button id="btn-color" class="toggle active">Color: ON</button>
-        <button id="btn-hyp" class="toggle">Hyp: OFF</button>
-        <div class="ctrl-group">
+        <button id="btn-color" class="toggle active" data-tip="Map each pitch class to a hue (C = red, +30° per semitone)">Color: ON</button>
+        <button id="btn-hyp" class="toggle" data-tip="Hyperbolic warp — compresses outer regions into a Poincaré-disk-like geometry">Hyp: OFF</button>
+        <div class="ctrl-group" data-tip="How far ahead to look in the MIDI timeline — compensates for display latency">
           <label for="visual-lead">Visual lead</label>
           <input type="range" id="visual-lead" min="0" max="100" step="1" value="22">
           <span id="visual-lead-display">22 ms</span>
