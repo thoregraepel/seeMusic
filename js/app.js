@@ -8,6 +8,7 @@ import { buildNoteRanges, getRawNoteLevels, applyThreshold } from './fft_analyze
 import { init as initVisual, render } from './visual_engine.js';
 import { setupUI } from './ui.js';
 import { initDial } from './color_dial.js';
+import * as phase from './phase_space.js';
 import { initMidiInput, clearNotes } from './midi_input.js';
 import * as piano from './piano.js';
 import { BasicPitchTranscriber } from './basic_pitch.js';
@@ -30,6 +31,14 @@ const state = {
   hueOffset:        0,     // degrees [0, 360): which hue C maps to
   hueDirection:     1,     // +1 = CW ascending pitch, -1 = CCW
   tilt:             0,
+  // phase-space embedding
+  phaseTauMs:       2,
+  phaseTrailSec:    5,
+  phaseStride:      8,
+  phaseLpCutoff:    5800,
+  phaseMode3d:      true,
+  phasePointSize:   2.5,
+  phaseColorScheme: 'plasma',
   syncMeasure:      false,
   // midi-mode only
   allNotes:         [],
@@ -80,8 +89,9 @@ function updateSyncDisplay(renderMs) {
 }
 
 let ui;
-let dial   = null;
-let rafId  = null;
+let dial            = null;
+let rafId           = null;
+let phaseInitialized = false;
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -121,7 +131,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     onSfScale:   v => { state.sfScale    = v; },
     onWaveform:  v => { state.waveform   = v; },
     onSuperMode: v => { state.superMode  = v; },
-    onRenderMode:v => { state.renderMode = v; },
+    onRenderMode: v => {
+      state.renderMode = v;
+      if (v === 'phase') {
+        const c = document.getElementById('phase-container');
+        if (!phaseInitialized) {
+          phase.init(c);
+          phaseInitialized = true;
+        } else {
+          phase.resize(c);
+        }
+      }
+    },
+    onPhaseTauMs:       v => { state.phaseTauMs       = v; },
+    onPhaseTrailSec:    v => { state.phaseTrailSec    = v; },
+    onPhaseStride:      v => { state.phaseStride      = v; },
+    onPhaseLpCutoff:    v => { state.phaseLpCutoff    = v; },
+    onPhasePointSize:   v => { state.phasePointSize   = v; },
+    onPhaseColorScheme: v => { state.phaseColorScheme = v; },
+    onPhaseMode3d: () => {
+      state.phaseMode3d = !state.phaseMode3d;
+      phase.reset();
+      return state.phaseMode3d;
+    },
+    onPhaseReset: () => phase.reset(),
     onGridArms:  v => { state.gridArms  = v; },
     onGridPhase: v => { state.gridPhase = v; },
     onTilt:      v => { state.tilt       = v; },
@@ -455,20 +488,34 @@ function startRaf() {
     ui.setNotesDisplay(active);
 
     const syncT0 = state.syncMeasure ? performance.now() : 0;
-    render(active, {
-      showVisual: state.showVisual,
-      sfScale:    state.sfScale,
-      waveform:   state.waveform,
-      superMode:  state.superMode,
-      renderMode: state.renderMode,
-      hyperbolic: state.hyperbolic,
-      colorMode:    state.colorMode,
-      hueOffset:    state.hueOffset,
-      hueDirection: state.hueDirection,
-      tilt:         state.tilt,
-      gridArms:     state.gridArms,
-      gridPhase:    state.gridPhase * Math.PI / 180,
-    });
+    if (state.renderMode === 'phase') {
+      const analyser = (state.inputMode === 'audio' || state.inputMode === 'mic')
+        ? mp3.getAnalyserNode() : null;
+      phase.update(analyser, {
+        tauMs:       state.phaseTauMs,
+        stride:      state.phaseStride,
+        trailSec:    state.phaseTrailSec,
+        lpCutoffHz:  state.phaseLpCutoff,
+        mode3d:      state.phaseMode3d,
+        pointSize:   state.phasePointSize,
+        colorScheme: state.phaseColorScheme,
+      });
+    } else {
+      render(active, {
+        showVisual: state.showVisual,
+        sfScale:    state.sfScale,
+        waveform:   state.waveform,
+        superMode:  state.superMode,
+        renderMode: state.renderMode,
+        hyperbolic: state.hyperbolic,
+        colorMode:    state.colorMode,
+        hueOffset:    state.hueOffset,
+        hueDirection: state.hueDirection,
+        tilt:         state.tilt,
+        gridArms:     state.gridArms,
+        gridPhase:    state.gridPhase * Math.PI / 180,
+      });
+    }
     if (state.syncMeasure) updateSyncDisplay(performance.now() - syncT0);
 
     if (state.showPiano) {

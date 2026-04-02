@@ -41,6 +41,14 @@ export function setupUI({
   onKeyHueRotate,
   onKeyDirectionFlip,
   onKeyDefaults,
+  onPhaseTauMs,
+  onPhaseTrailSec,
+  onPhaseStride,
+  onPhaseLpCutoff,
+  onPhasePointSize,
+  onPhaseColorScheme,
+  onPhaseMode3d,
+  onPhaseReset,
 }) {
   const fileSelect      = document.getElementById('file-select');
   const audioSelect     = document.getElementById('audio-select');
@@ -182,7 +190,72 @@ export function setupUI({
 
   waveformSelect.addEventListener('change', () => onWaveform(waveformSelect.value));
   superSelect.addEventListener('change',    () => onSuperMode(superSelect.value));
-  document.getElementById('render-mode-select').addEventListener('change', e => onRenderMode(e.target.value));
+  const rowPhase       = document.getElementById('row-phase');
+  const phaseContainer = document.getElementById('phase-container');
+  const gratingCanvas  = document.getElementById('grating-canvas');
+
+  document.getElementById('render-mode-select').addEventListener('change', e => {
+    const mode    = e.target.value;
+    const isPhase = mode === 'phase';
+    rowPhase.classList.toggle('hidden', !isPhase);
+    phaseContainer.classList.toggle('hidden', !isPhase);
+    gratingCanvas.classList.toggle('hidden',  isPhase);
+    onRenderMode(mode);
+  });
+
+  // ── Phase-space controls ───────────────────────────────────────────────────
+  const phaseTauSlider  = document.getElementById('phase-tau');
+  const phaseTauDisplay = document.getElementById('phase-tau-display');
+  phaseTauSlider.addEventListener('input', () => {
+    const v = parseFloat(phaseTauSlider.value);
+    phaseTauDisplay.textContent = `${v.toFixed(1)} ms`;
+    onPhaseTauMs(v);
+  });
+
+  const phaseTrailSlider  = document.getElementById('phase-trail');
+  const phaseTrailDisplay = document.getElementById('phase-trail-display');
+  phaseTrailSlider.addEventListener('input', () => {
+    const v = parseFloat(phaseTrailSlider.value);
+    phaseTrailDisplay.textContent = `${v.toFixed(1)} s`;
+    onPhaseTrailSec(v);
+  });
+
+  const phaseStrideSlider  = document.getElementById('phase-stride');
+  const phaseStrideDisplay = document.getElementById('phase-stride-display');
+  phaseStrideSlider.addEventListener('input', () => {
+    const v = parseInt(phaseStrideSlider.value);
+    phaseStrideDisplay.textContent = v;
+    onPhaseStride(v);
+  });
+
+  const phaseLpSlider  = document.getElementById('phase-lp');
+  const phaseLpDisplay = document.getElementById('phase-lp-display');
+  phaseLpSlider.addEventListener('input', () => {
+    const hz = Math.round(Math.pow(2, parseFloat(phaseLpSlider.value)));
+    phaseLpDisplay.textContent = hz >= 1000 ? `${(hz / 1000).toFixed(1)} kHz` : `${hz} Hz`;
+    onPhaseLpCutoff(hz);
+  });
+
+  const phaseSizeSlider  = document.getElementById('phase-size');
+  const phaseSizeDisplay = document.getElementById('phase-size-display');
+  phaseSizeSlider.addEventListener('input', () => {
+    const v = parseFloat(phaseSizeSlider.value);
+    phaseSizeDisplay.textContent = v.toFixed(1);
+    onPhasePointSize(v);
+  });
+
+  document.getElementById('phase-color').addEventListener('change', e => {
+    onPhaseColorScheme(e.target.value);
+  });
+
+  const btnPhase3d = document.getElementById('btn-phase-3d');
+  btnPhase3d.addEventListener('click', () => {
+    const active = onPhaseMode3d();
+    btnPhase3d.textContent = active ? '3D: ON' : '2D';
+    btnPhase3d.classList.toggle('active', active);
+  });
+
+  document.getElementById('btn-phase-reset').addEventListener('click', () => onPhaseReset());
 
   const gridArmsSlider  = document.getElementById('grid-arms');
   const gridArmsDisplay = document.getElementById('grid-arms-display');

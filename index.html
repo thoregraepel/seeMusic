@@ -12,6 +12,14 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+    }
+  }
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
 </head>
@@ -57,7 +65,21 @@
         <li><strong>Circles</strong> — each note produces concentric rings whose spacing reflects its pitch.</li>
         <li><strong>Grid</strong> — each note produces a set of parallel lines. Use <strong>Arms</strong> to set how many line directions are overlaid and <strong>Phase</strong> to rotate them.</li>
         <li><strong>Star</strong> — radial sectors tiled around the centre. <strong>Arms</strong> sets the number of sectors; adjacent sectors mirror each other for 2 arms, giving bilateral symmetry. <strong>Phase</strong> rotates the whole pattern.</li>
+        <li><strong>Phase</strong> — phase-space reconstruction (see below).</li>
       </ul>
+
+      <h3>Phase space mode</h3>
+      <p>Based on <em>Takens' embedding theorem</em> (1981), each audio sample is mapped to a point <em>(s(t), s(t+τ), s(t+2τ))</em> in 3-D space. As the audio plays, these points trace out the dynamical attractor of the sound. Pure tones produce ellipses; chords produce Lissajous figures; full music produces rich quasi-periodic attractors. The scene is fully interactive — drag to rotate, scroll to zoom, right-click to pan.</p>
+      <ul>
+        <li><strong>τ delay</strong> — time gap between coordinates. The optimal value is roughly one quarter of the dominant period (~1–5 ms for music). Too small collapses everything onto the diagonal; too large gives random scatter.</li>
+        <li><strong>Trail</strong> — seconds of trajectory to accumulate. Longer trails reveal the full attractor; shorter trails show only recent dynamics.</li>
+        <li><strong>Stride</strong> — samples skipped between points. Higher values give a coarser but faster portrait.</li>
+        <li><strong>LP cutoff</strong> — low-pass filter applied before embedding. Lower values smooth the trajectory and emphasise slow dynamics; higher values preserve fine harmonic structure.</li>
+        <li><strong>Pt size</strong> — pixel size per point. With additive blending, dense attractor regions automatically appear brighter — no explicit density estimation needed.</li>
+        <li><strong>3D / 2D</strong> — toggle between the full 3-D embedding and a flat 2-D projection onto the XY plane.</li>
+        <li><strong>Reset trail</strong> — clears the accumulated portrait and starts fresh.</li>
+      </ul>
+      <p>Phase space works with audio files and microphone input. In MIDI mode the last accumulated portrait stays frozen and can still be rotated and inspected.</p>
 
       <h3>Visual controls</h3>
       <ul>
@@ -191,6 +213,7 @@
             <option value="circles">Circles</option>
             <option value="grid">Grid</option>
             <option value="star">Star</option>
+            <option value="phase">Phase</option>
           </select>
         </div>
         <div class="ctrl-group" data-tip="Grid: number of line directions. Star: number of radial sectors (2 = bilateral symmetry)">
@@ -231,6 +254,48 @@
         </div>
       </div>
 
+      <!-- Row 5: Phase space -->
+      <div class="ctrl-row hidden" id="row-phase">
+        <span class="section-label phase-label">PHASE</span>
+        <div class="ctrl-group" data-tip="Embedding delay τ — time gap between coordinates. Too small: points cluster on diagonal. Too large: random scatter. ~1–5 ms reveals the attractor for most music.">
+          <label for="phase-tau">τ delay</label>
+          <input type="range" id="phase-tau" min="0.1" max="20" step="0.1" value="2">
+          <span id="phase-tau-display">2.0 ms</span>
+        </div>
+        <div class="ctrl-group" data-tip="Seconds of trajectory to accumulate. Longer trails build up the full attractor shape; shorter trails show only recent motion.">
+          <label for="phase-trail">Trail</label>
+          <input type="range" id="phase-trail" min="0.5" max="15" step="0.5" value="5">
+          <span id="phase-trail-display">5.0 s</span>
+        </div>
+        <div class="ctrl-group" data-tip="Samples skipped between plotted points. Higher stride runs faster and gives a coarser, more open trajectory.">
+          <label for="phase-stride">Stride</label>
+          <input type="range" id="phase-stride" min="1" max="32" step="1" value="8">
+          <span id="phase-stride-display">8</span>
+        </div>
+        <div class="ctrl-group" data-tip="Low-pass filter cutoff before embedding. Lower values smooth the signal and emphasise slow dynamics; higher values preserve fine harmonic detail.">
+          <label for="phase-lp">LP cutoff</label>
+          <input type="range" id="phase-lp" min="7" max="14.4" step="0.05" value="12.5">
+          <span id="phase-lp-display">5.8 kHz</span>
+        </div>
+        <div class="ctrl-group" data-tip="Base pixel size of each point. With additive blending, dense attractor regions automatically appear brighter.">
+          <label for="phase-size">Pt size</label>
+          <input type="range" id="phase-size" min="0.5" max="8" step="0.5" value="2.5">
+          <span id="phase-size-display">2.5</span>
+        </div>
+        <div class="ctrl-group" data-tip="Colour scheme: newest points are bright, oldest fade to the background hue.">
+          <label for="phase-color">Colors</label>
+          <select id="phase-color">
+            <option value="plasma" selected>Plasma</option>
+            <option value="fire">Fire</option>
+            <option value="aurora">Aurora</option>
+            <option value="violet">Violet</option>
+            <option value="lime">Lime</option>
+          </select>
+        </div>
+        <button id="btn-phase-3d" class="toggle active" data-tip="3D uses (s(t), s(t+τ), s(t+2τ)). 2D collapses to the XY plane — easier to read but hides one dimension.">3D: ON</button>
+        <button id="btn-phase-reset" data-tip="Clear the accumulated trail and start fresh">Reset trail</button>
+      </div>
+
     </header>
 
     <div id="mobile-backdrop"></div>
@@ -242,6 +307,7 @@
 
     <main>
       <canvas id="grating-canvas"></canvas>
+      <div id="phase-container" class="hidden"></div>
       <div id="sync-panel"></div>
     </main>
 
