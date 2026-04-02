@@ -174,7 +174,7 @@ body {
   margin-left: -54px;
   border-radius: 50%;
   background: conic-gradient(
-    from -90deg,
+    from 0deg,
     hsl(0,   100%, 55%),
     hsl(30,  100%, 55%),
     hsl(60,  100%, 55%),

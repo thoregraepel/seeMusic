@@ -38,6 +38,9 @@ export function setupUI({
   onAudioMidiFile,
   onAudioMidiToggle,
   onTranscribe,
+  onKeyHueRotate,
+  onKeyDirectionFlip,
+  onKeyDefaults,
 }) {
   const fileSelect      = document.getElementById('file-select');
   const audioSelect     = document.getElementById('audio-select');
@@ -347,6 +350,97 @@ export function setupUI({
       case 'KeyA':  btnAudio.click();      break;
       case 'KeyV':  btnVisual.click();     break;
       case 'KeyF':  btnFullscreen.click(); break;
+
+      // 0 → circles
+      case 'Digit0':
+        e.preventDefault();
+        document.getElementById('render-mode-select').value = 'circles';
+        onRenderMode('circles');
+        break;
+
+      // 1–9 → grid with N arms
+      case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4':
+      case 'Digit5': case 'Digit6': case 'Digit7': case 'Digit8': case 'Digit9': {
+        e.preventDefault();
+        const arms = Number(e.key);
+        document.getElementById('render-mode-select').value = 'grid';
+        onRenderMode('grid');
+        gridArmsSlider.value = arms;
+        gridArmsDisplay.textContent = arms;
+        onGridArms(arms);
+        break;
+      }
+
+      // ↑ / ↓ → SF Scale zoom in / out
+      case 'ArrowUp': {
+        e.preventDefault();
+        const nextUp = Math.min(parseFloat(sfSlider.max),
+          parseFloat(sfSlider.value) + parseFloat(sfSlider.step));
+        sfSlider.value = nextUp;
+        const vUp = Math.pow(2, nextUp);
+        sfDisplay.textContent = vUp.toFixed(2) + '×';
+        onSfScale(vUp);
+        break;
+      }
+      case 'ArrowDown': {
+        e.preventDefault();
+        const nextDn = Math.max(parseFloat(sfSlider.min),
+          parseFloat(sfSlider.value) - parseFloat(sfSlider.step));
+        sfSlider.value = nextDn;
+        const vDn = Math.pow(2, nextDn);
+        sfDisplay.textContent = vDn.toFixed(2) + '×';
+        onSfScale(vDn);
+        break;
+      }
+
+      // ← / → → rotate colour wheel one semitone
+      case 'ArrowLeft':
+        e.preventDefault();
+        onKeyHueRotate(-30);
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        onKeyHueRotate(30);
+        break;
+
+      // - / + → phase rotation
+      case 'Minus': case 'NumpadSubtract': {
+        e.preventDefault();
+        const pDn = ((parseInt(gridPhaseSlider.value) - 15) % 360 + 360) % 360;
+        gridPhaseSlider.value = pDn;
+        gridPhaseDisplay.textContent = `${pDn}°`;
+        onGridPhase(pDn);
+        break;
+      }
+      case 'Equal': case 'NumpadAdd': {
+        e.preventDefault();
+        const pUp = (parseInt(gridPhaseSlider.value) + 15) % 360;
+        gridPhaseSlider.value = pUp;
+        gridPhaseDisplay.textContent = `${pUp}°`;
+        onGridPhase(pUp);
+        break;
+      }
+
+      // Enter → flip CW / CCW
+      case 'Enter':
+        e.preventDefault();
+        onKeyDirectionFlip();
+        break;
+
+      // D → reset visual settings to defaults
+      case 'KeyD': {
+        e.preventDefault();
+        const renderSel = document.getElementById('render-mode-select');
+        sfSlider.value = 0;           sfDisplay.textContent = '1.00×';  onSfScale(1);
+        waveformSelect.value = 'sawtooth';                               onWaveform('sawtooth');
+        renderSel.value = 'circles';                                     onRenderMode('circles');
+        gridArmsSlider.value = 2;     gridArmsDisplay.textContent = '2'; onGridArms(2);
+        gridPhaseSlider.value = 0;    gridPhaseDisplay.textContent = '0°'; onGridPhase(0);
+        superSelect.value = 'sum';                                       onSuperMode('sum');
+        tiltSlider.value = 0;         tiltDisplay.textContent = '0.0';   onTilt(0);
+        onKeyDefaults();  // resets colorMode, hyperbolic, hue offset/direction + dial
+        break;
+      }
     }
   });
 

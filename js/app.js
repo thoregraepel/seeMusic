@@ -80,7 +80,8 @@ function updateSyncDisplay(renderMs) {
 }
 
 let ui;
-let rafId = null;
+let dial   = null;
+let rafId  = null;
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -193,6 +194,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       const pop = document.getElementById('color-wheel-popover');
       pop.classList.toggle('visible');
     },
+    onKeyHueRotate: delta => {
+      state.hueOffset = ((state.hueOffset + delta) % 360 + 360) % 360;
+      if (dial) dial.setOffset(state.hueOffset);
+    },
+    onKeyDirectionFlip: () => {
+      state.hueDirection = -state.hueDirection;
+      if (dial) dial.setDirection(state.hueDirection);
+    },
+    onKeyDefaults: () => {
+      state.sfScale = 1; state.waveform = 'sawtooth'; state.renderMode = 'circles';
+      state.gridArms = 2; state.gridPhase = 0; state.superMode = 'sum'; state.tilt = 0;
+      state.colorMode = true; state.hyperbolic = false;
+      state.hueOffset = 0; state.hueDirection = 1;
+      if (dial) { dial.setOffset(0); dial.setDirection(1); }
+      ui.setColorMode(true);
+      ui.setHyperbolic(false);
+    },
     onLiveMode: async () => {
       if (!state.liveMode) {
         try {
@@ -215,7 +233,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Colour-wheel dial
-  initDial(document.getElementById('color-dial-mount'), ({ offset, direction }) => {
+  dial = initDial(document.getElementById('color-dial-mount'), ({ offset, direction }) => {
     state.hueOffset    = offset;
     state.hueDirection = direction;
   });
