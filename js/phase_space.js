@@ -2,44 +2,65 @@
 //
 // Each audio sample becomes a point  x = (s(t), s(t+τ), s(t+2τ))  in 3-D
 // space, accumulating a glowing trail that reveals the system's attractor.
-// Newest points are bright; oldest fade to the background colour.
-// The scene is fully interactive via Three.js OrbitControls.
 //
-// Mathematical basis: Takens' embedding theorem (1981) guarantees that for a
-// smooth dynamical system the delay-coordinate map produces an attractor
-// topologically equivalent to the original, provided embedding dimension ≥ 2d+1
-// and τ is chosen well (first minimum of mutual information ≈ T_dominant / 4).
+// Two colour modes (switchable at runtime, zero re-upload cost):
+//   age   — monochrome: hue from uNew/uOld scheme, alpha from trail age.
+//   pitch — each point is coloured by the velocity-weighted circular mean
+//            of the active pitch classes at the moment it was written,
+//            using the same hue mapping as the grating/piano views.
+//            Alpha still encodes age, so the history fades naturally.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-// ── Ring-buffer capacity ───────────────────────────────────────────────────────
-// At stride 4 and 44 100 Hz this holds ≈ 18 s of audio.
 const MAX_PTS = 200_000;
 
 // ── Module state ───────────────────────────────────────────────────────────────
 let renderer, scene, camera, orbit, mat, mesh, geo;
-let positions;      // Float32Array  MAX_PTS × 3
-let filteredBuf;    // reused each frame for LP-filtered time-domain data
+let positions;    // Float32Array  MAX_PTS × 3
+let hues;         // Float32Array  MAX_PTS     — pitch-class hue per point
+let filteredBuf;
 let writeHead   = 0;
 let activeCount = 0;
 let lpState     = 0;
 let prevNow     = null;
 
 // ── GLSL ──────────────────────────────────────────────────────────────────────
-// Age per vertex computed on the GPU via gl_VertexID (requires WebGL 2, which
-// Three.js r152+ uses by default). No CPU-side colour update needed.
-
 const VS = /* glsl */`
-  uniform float uHead;    // current write-head position in ring buffer
-  uniform float uTrail;   // trail length in ring-buffer slots
-  uniform float uSize;    // base point size (pixels)
-  varying float vAge;     // 0 = newest, 1 = fully faded
+  attribute float aHue;     // pitch-class hue written at this point's birth [0, 360)
+  uniform float uHead;      // current ring-buffer write head
+  uniform float uTrail;     // trail length in slots
+  uniform float uSize;      // base point size in pixels
+  uniform float uPitchMode; // 0 = age colour, 1 = pitch colour
+  uniform vec3  uNew;       // newest colour  (age mode)
+  uniform vec3  uOld;       // oldest colour  (age mode)
+
+  varying float vAge;
+  varying vec3  vCol;
+
+  // HSL → RGB with saturation = 1, lightness = 0.55.
+  // Baked constants: c = 0.9, m = 0.1.
+  vec3 hue2rgb(float h) {
+    float hp = mod(h / 60.0, 6.0);
+    float x  = 0.9 * (1.0 - abs(mod(hp, 2.0) - 1.0));
+    vec3 col;
+    if      (hp < 1.0) col = vec3(0.9, x,   0.0);
+    else if (hp < 2.0) col = vec3(x,   0.9, 0.0);
+    else if (hp < 3.0) col = vec3(0.0, 0.9, x  );
+    else if (hp < 4.0) col = vec3(0.0, x,   0.9);
+    else if (hp < 5.0) col = vec3(x,   0.0, 0.9);
+    else               col = vec3(0.9, 0.0, x  );
+    return col + 0.1;   // m = l - c/2 = 0.55 - 0.45 = 0.1
+  }
 
   void main() {
-    float idx  = float(gl_VertexID);
-    float raw  = mod(uHead - idx + ${MAX_PTS}.0, ${MAX_PTS}.0);
+    float idx = float(gl_VertexID);
+    float raw = mod(uHead - idx + ${MAX_PTS}.0, ${MAX_PTS}.0);
     vAge = clamp(raw / uTrail, 0.0, 1.0);
+
+    vCol = uPitchMode > 0.5
+      ? hue2rgb(aHue)
+      : mix(uNew, uOld, sqrt(vAge));
 
     gl_Position  = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     gl_PointSize = uSize * (1.0 - vAge * 0.65);
@@ -47,19 +68,17 @@ const VS = /* glsl */`
 `;
 
 const FS = /* glsl */`
-  uniform vec3 uNew;    // colour of newest points
-  uniform vec3 uOld;    // colour of oldest points (background hue)
   varying float vAge;
+  varying vec3  vCol;
 
   void main() {
-    // Circular sprite — discard corners
     if (dot(gl_PointCoord - 0.5, gl_PointCoord - 0.5) > 0.25) discard;
     float alpha  = pow(1.0 - vAge, 1.6);
-    gl_FragColor = vec4(mix(uNew, uOld, sqrt(vAge)) * alpha, alpha);
+    gl_FragColor = vec4(vCol * alpha, alpha);
   }
 `;
 
-// ── Colour presets ─────────────────────────────────────────────────────────────
+// ── Colour presets (age mode) ──────────────────────────────────────────────────
 export const COLOR_SCHEMES = {
   plasma: { label: 'Plasma',  newColor: '#ffffff', oldColor: '#04083a' },
   fire:   { label: 'Fire',    newColor: '#ffee66', oldColor: '#1a0000' },
@@ -68,7 +87,7 @@ export const COLOR_SCHEMES = {
   lime:   { label: 'Lime',    newColor: '#ccff44', oldColor: '#010e00' },
 };
 
-// ── Initialise — call once, pass the container div ─────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
 export function init(container) {
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -85,27 +104,29 @@ export function init(container) {
   orbit.enableDamping = true;
   orbit.dampingFactor = 0.06;
 
-  // Subtle axis guides (s(t), s(t+τ), s(t+2τ) axes)
   const ax = new THREE.AxesHelper(1.05);
   ax.material.transparent = true;
   ax.material.opacity     = 0.18;
   scene.add(ax);
 
-  // Point cloud — positions updated CPU-side; colours computed GPU-side
   positions = new Float32Array(MAX_PTS * 3);
-  geo       = new THREE.BufferGeometry();
+  hues      = new Float32Array(MAX_PTS);
+
+  geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('aHue',     new THREE.BufferAttribute(hues,      1));
   geo.setDrawRange(0, 0);
 
   mat = new THREE.ShaderMaterial({
     vertexShader:   VS,
     fragmentShader: FS,
     uniforms: {
-      uHead:  { value: 0 },
-      uTrail: { value: 5000 },
-      uSize:  { value: 2.5 },
-      uNew:   { value: new THREE.Color('#ffffff') },
-      uOld:   { value: new THREE.Color('#04083a') },
+      uHead:      { value: 0 },
+      uTrail:     { value: 5000 },
+      uSize:      { value: 2.5 },
+      uPitchMode: { value: 0 },
+      uNew:       { value: new THREE.Color('#ffffff') },
+      uOld:       { value: new THREE.Color('#04083a') },
     },
     transparent: true,
     depthWrite:  false,
@@ -118,10 +139,7 @@ export function init(container) {
   _applySize(container);
 }
 
-// ── Resize — call after showing the container ──────────────────────────────────
-export function resize(container) {
-  _applySize(container);
-}
+export function resize(container) { _applySize(container); }
 
 function _applySize(container) {
   if (!renderer) return;
@@ -135,7 +153,6 @@ function _applySize(container) {
 export function update(analyserNode, params) {
   if (!renderer) return;
 
-  // No audio source: keep the scene interactive with the frozen portrait.
   if (!analyserNode) {
     orbit.update();
     renderer.render(scene, camera);
@@ -143,13 +160,15 @@ export function update(analyserNode, params) {
   }
 
   const {
-    tauMs       = 2,
-    stride      = 8,
-    trailSec    = 5,
-    lpCutoffHz  = 5800,
-    mode3d      = true,
-    pointSize   = 2.5,
-    colorScheme = 'plasma',
+    tauMs        = 2,
+    stride       = 8,
+    trailSec     = 5,
+    lpCutoffHz   = 5800,
+    mode3d       = true,
+    pointSize    = 2.5,
+    colorScheme  = 'plasma',
+    phaseColorMode = 'age',   // 'age' | 'pitch'
+    noteHue      = 0,         // velocity-weighted circular-mean hue of active notes
   } = params;
 
   const sr    = analyserNode.context.sampleRate;
@@ -164,17 +183,12 @@ export function update(analyserNode, params) {
     prevNow = null;
   }
 
-  // Read time-domain signal and apply single-pole IIR low-pass filter.
-  // The filter state (lpState) carries over between frames so phase is
-  // continuous across frame boundaries.
   analyserNode.getFloatTimeDomainData(filteredBuf);
   for (let i = 0; i < fsz; i++) {
-    lpState       = lpA * filteredBuf[i] + (1 - lpA) * lpState;
+    lpState        = lpA * filteredBuf[i] + (1 - lpA) * lpState;
     filteredBuf[i] = lpState;
   }
 
-  // Determine how many samples are genuinely new this frame, based on
-  // elapsed wall time, and process only those to avoid duplicating points.
   const now        = performance.now();
   const dt         = prevNow === null ? 1 / 60 : Math.min((now - prevNow) / 1000, 0.15);
   prevNow          = now;
@@ -182,49 +196,54 @@ export function update(analyserNode, params) {
   const startIdx   = Math.max(0, fsz - 2 * tau - newSamples);
   const endIdx     = fsz - 2 * tau;
 
-  // Write points into the ring buffer
   for (let i = startIdx; i < endIdx; i += stride) {
     const b = writeHead * 3;
     positions[b]     = filteredBuf[i];
     positions[b + 1] = filteredBuf[i + tau];
     positions[b + 2] = mode3d ? filteredBuf[i + 2 * tau] : 0;
+    hues[writeHead]  = noteHue;
     writeHead = (writeHead + 1) % MAX_PTS;
     if (activeCount < MAX_PTS) activeCount++;
   }
 
   geo.attributes.position.needsUpdate = true;
+  geo.attributes.aHue.needsUpdate     = true;
   geo.setDrawRange(0, activeCount);
 
   const cs = COLOR_SCHEMES[colorScheme] ?? COLOR_SCHEMES.plasma;
-  mat.uniforms.uHead.value  = writeHead;
-  mat.uniforms.uTrail.value = trail;
-  mat.uniforms.uSize.value  = pointSize;
-  mat.uniforms.uNew.value.set(cs.newColor);
-  mat.uniforms.uOld.value.set(cs.oldColor);
+  const u  = mat.uniforms;
+  u.uHead.value      = writeHead;
+  u.uTrail.value     = trail;
+  u.uSize.value      = pointSize;
+  u.uPitchMode.value = phaseColorMode === 'pitch' ? 1 : 0;
+  u.uNew.value.set(cs.newColor);
+  u.uOld.value.set(cs.oldColor);
 
   orbit.update();
   renderer.render(scene, camera);
 }
 
-// ── Clear accumulated trail ────────────────────────────────────────────────────
+// ── Reset ─────────────────────────────────────────────────────────────────────
 export function reset() {
   writeHead = activeCount = 0;
   lpState   = 0;
   prevNow   = null;
   if (positions) positions.fill(0);
+  if (hues)      hues.fill(0);
   if (geo) {
     geo.setDrawRange(0, 0);
     geo.attributes.position.needsUpdate = true;
+    geo.attributes.aHue.needsUpdate     = true;
   }
 }
 
-// ── Tear down (call if removing the view) ─────────────────────────────────────
+// ── Destroy ───────────────────────────────────────────────────────────────────
 export function destroy() {
   if (!renderer) return;
   renderer.dispose();
   renderer.domElement.remove();
   renderer = scene = camera = orbit = mat = mesh = geo = null;
-  positions = filteredBuf = null;
+  positions = hues = filteredBuf = null;
   writeHead = activeCount = 0;
   lpState = 0;
   prevNow = null;

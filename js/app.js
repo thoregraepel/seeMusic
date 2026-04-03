@@ -7,7 +7,7 @@ import * as mp3   from './mp3_engine.js';           // Audio file / Web Audio en
 import { buildNoteRanges, getRawNoteLevels, applyThreshold } from './fft_analyzer.js';
 import { init as initVisual, render } from './visual_engine.js';
 import { setupUI } from './ui.js';
-import { initDial } from './color_dial.js';
+import { initDial, pitchHue } from './color_dial.js';
 import * as phase from './phase_space.js';
 import { initMidiInput, clearNotes } from './midi_input.js';
 import * as piano from './piano.js';
@@ -39,6 +39,7 @@ const state = {
   phaseMode3d:      true,
   phasePointSize:   2.5,
   phaseColorScheme: 'plasma',
+  phaseColorMode:   'age',    // 'age' | 'pitch'
   syncMeasure:      false,
   // midi-mode only
   allNotes:         [],
@@ -149,6 +150,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     onPhaseLpCutoff:    v => { state.phaseLpCutoff    = v; },
     onPhasePointSize:   v => { state.phasePointSize   = v; },
     onPhaseColorScheme: v => { state.phaseColorScheme = v; },
+    onPhaseColorMode: () => {
+      state.phaseColorMode = state.phaseColorMode === 'age' ? 'pitch' : 'age';
+      return state.phaseColorMode;
+    },
     onPhaseMode3d: () => {
       state.phaseMode3d = !state.phaseMode3d;
       phase.reset();
@@ -492,14 +497,31 @@ function startRaf() {
       const analyser = (state.inputMode === 'audio' || state.inputMode === 'mic')
         ? mp3.getAnalyserNode()
         : audio.getAnalyserNode();
+
+      // Velocity-weighted circular mean of active pitch-class hues.
+      // Using circular mean (sin/cos) handles the wraparound at 0°/360°.
+      let noteHue = 0;
+      if (active.length > 0) {
+        let sinSum = 0, cosSum = 0;
+        for (const n of active) {
+          const h = pitchHue(n.midi, state.hueOffset, state.hueDirection) * Math.PI / 180;
+          const v = n.velocity ?? 1;
+          sinSum += Math.sin(h) * v;
+          cosSum += Math.cos(h) * v;
+        }
+        noteHue = ((Math.atan2(sinSum, cosSum) * 180 / Math.PI) + 360) % 360;
+      }
+
       phase.update(analyser, {
-        tauMs:       state.phaseTauMs,
-        stride:      state.phaseStride,
-        trailSec:    state.phaseTrailSec,
-        lpCutoffHz:  state.phaseLpCutoff,
-        mode3d:      state.phaseMode3d,
-        pointSize:   state.phasePointSize,
-        colorScheme: state.phaseColorScheme,
+        tauMs:          state.phaseTauMs,
+        stride:         state.phaseStride,
+        trailSec:       state.phaseTrailSec,
+        lpCutoffHz:     state.phaseLpCutoff,
+        mode3d:         state.phaseMode3d,
+        pointSize:      state.phasePointSize,
+        colorScheme:    state.phaseColorScheme,
+        phaseColorMode: state.phaseColorMode,
+        noteHue,
       });
     } else {
       render(active, {
