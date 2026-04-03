@@ -490,7 +490,8 @@ function startRaf() {
     const syncT0 = state.syncMeasure ? performance.now() : 0;
     if (state.renderMode === 'phase') {
       const analyser = (state.inputMode === 'audio' || state.inputMode === 'mic')
-        ? mp3.getAnalyserNode() : null;
+        ? mp3.getAnalyserNode()
+        : audio.getAnalyserNode();
       phase.update(analyser, {
         tauMs:       state.phaseTauMs,
         stride:      state.phaseStride,

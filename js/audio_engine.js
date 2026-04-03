@@ -1,20 +1,31 @@
 // Tone.js audio engine wrapper.
 // Tone.js is loaded as a CDN global — window.Tone / Tone.*
 
-let synth = null;
+let synth      = null;
+let analyser   = null;
 let audioMuted = false;
-
 
 export async function initAudio() {
   await Tone.start();
   if (!synth) {
+    // Native AnalyserNode on the Tone.js AudioContext for phase-space readout.
+    // smoothingTimeConstant=0 gives the raw waveform without temporal averaging.
+    analyser = Tone.context.rawContext.createAnalyser();
+    analyser.fftSize               = 8192;
+    analyser.smoothingTimeConstant = 0;
+
     synth = new Tone.PolySynth(Tone.Synth, {
       maxPolyphony: 64,
       oscillator: { type: 'triangle' },
       envelope: { attack: 0.02, decay: 0.05, sustain: 0.85, release: 0.4 },
     }).toDestination();
+
+    // Fan the synth output into the analyser (does not affect playback routing).
+    synth.connect(analyser);
   }
 }
+
+export function getAnalyserNode() { return analyser; }
 
 export function scheduleNotes(allNotes) {
   Tone.Transport.cancel();
