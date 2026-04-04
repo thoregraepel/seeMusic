@@ -51,6 +51,7 @@ export function setupUI({
   onPhaseMode3d,
   onPhaseColorMode,
   onPhaseLines,
+  onPhaseAutocam,
   onPhaseReset,
 }) {
   const fileSelect      = document.getElementById('file-select');
@@ -270,6 +271,13 @@ export function setupUI({
     const active = onPhaseLines();
     btnPhaseLines.textContent = active ? 'Lines: ON' : 'Lines: OFF';
     btnPhaseLines.classList.toggle('active', active);
+  });
+
+  const btnAutocam = document.getElementById('btn-phase-autocam');
+  btnAutocam.addEventListener('click', () => {
+    const active = onPhaseAutocam();
+    btnAutocam.textContent = active ? 'Autocam: ON' : 'Autocam: OFF';
+    btnAutocam.classList.toggle('active', active);
   });
 
   document.getElementById('btn-phase-reset').addEventListener('click', () => onPhaseReset());

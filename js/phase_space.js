@@ -24,6 +24,15 @@ let lpState     = 0;
 let prevNow     = null;
 let prevMode3d  = null;
 
+// ── Autocam state ──────────────────────────────────────────────────────────────
+let autocamOn  = false;
+let autocamT   = 0;                          // seconds elapsed while autocam is on
+const AC_W1    = (2 * Math.PI) / 23;         // azimuth: full orbit every 23 s
+const AC_W2    = (2 * Math.PI) / 17;         // elevation: cycle every 17 s (irrational ratio → path never repeats)
+const _acTgt   = new THREE.Vector3();        // smoothed look-at target
+const _acTmp   = new THREE.Vector3();        // scratch vector
+let   acDist   = 3.0;                        // smoothed camera distance
+
 // ── GLSL ──────────────────────────────────────────────────────────────────────
 const VS = /* glsl */`
   attribute float aHue;
@@ -159,12 +168,82 @@ function _applySize(container) {
   if (camera) { camera.aspect = w / h; camera.updateProjectionMatrix(); }
 }
 
+// ── Autocam ───────────────────────────────────────────────────────────────────
+function _runAutocam(dt) {
+  if (!autocamOn || activeCount === 0) return;
+  autocamT += dt;
+
+  // Sample up to 1000 recent points for centroid + bounding box (single pass).
+  const N = Math.min(activeCount, 1000);
+  let cx = 0, cy = 0, cz = 0, valid = 0;
+  let minX =  Infinity, maxX = -Infinity;
+  let minY =  Infinity, maxY = -Infinity;
+  let minZ =  Infinity, maxZ = -Infinity;
+
+  for (let i = 0; i < N; i++) {
+    const idx = ((writeHead - 1 - i) + MAX_PTS) % MAX_PTS;
+    const b   = idx * 3;
+    const x = positions[b], y = positions[b + 1], z = positions[b + 2];
+    if (!isFinite(x)) continue;
+    cx += x; cy += y; cz += z; valid++;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+  }
+  if (valid === 0) return;
+
+  cx /= valid; cy /= valid; cz /= valid;
+
+  // Smoothly track centroid.
+  _acTgt.lerp(_acTmp.set(cx, cy, cz), 0.02);
+
+  // Adapt distance so the attractor fills ~80 % of the frame.
+  const spread     = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 0.1) * 0.5;
+  const fovRad     = camera.fov * Math.PI / 180;
+  const wantedDist = Math.max(1.2, Math.min(7, (spread / Math.tan(fovRad / 2)) * 1.25));
+  acDist += (wantedDist - acDist) * 0.005;
+
+  // Lissajous sphere path: irrational frequency ratio means path never exactly repeats.
+  const az = AC_W1 * autocamT;
+  const el = 0.5 * Math.sin(AC_W2 * autocamT);   // ± 0.5 rad  ≈ ± 29°
+
+  camera.position.set(
+    _acTgt.x + acDist * Math.cos(el) * Math.sin(az),
+    _acTgt.y + acDist * Math.sin(el),
+    _acTgt.z + acDist * Math.cos(el) * Math.cos(az),
+  );
+  camera.lookAt(_acTgt);
+  orbit.target.copy(_acTgt);
+}
+
 // ── Per-frame update ───────────────────────────────────────────────────────────
 export function update(analyserNode, params) {
   if (!renderer) return;
 
+  // dt is needed by both the write loop and autocam — compute it unconditionally.
+  const now = performance.now();
+  const dt  = prevNow === null ? 1 / 60 : Math.min((now - prevNow) / 1000, 0.15);
+  prevNow   = now;
+
+  const { autocam = false } = params ?? {};
+  if (autocam !== autocamOn) {
+    if (autocam) {
+      // Initialise from current camera state so there's no jump on enable.
+      _acTgt.copy(orbit.target);
+      acDist   = camera.position.distanceTo(orbit.target);
+      autocamT = 0;
+      orbit.enableRotate = false;
+      orbit.enablePan    = false;
+    } else {
+      orbit.enableRotate = true;
+      orbit.enablePan    = true;
+    }
+  }
+  autocamOn = autocam;
+
   if (!analyserNode) {
     orbit.update();
+    _runAutocam(dt);
     renderer.render(scene, camera);
     return;
   }
@@ -200,9 +279,6 @@ export function update(analyserNode, params) {
     filteredBuf[i] = lpState;
   }
 
-  const now        = performance.now();
-  const dt         = prevNow === null ? 1 / 60 : Math.min((now - prevNow) / 1000, 0.15);
-  prevNow          = now;
   const newSamples = Math.min(Math.round(dt * sr), fsz - 2 * tau - 1);
   const startIdx   = Math.max(0, fsz - 2 * tau - newSamples);
   const endIdx     = fsz - 2 * tau;
@@ -257,6 +333,7 @@ export function update(analyserNode, params) {
   lineMesh.visible =  drawLines;
 
   orbit.update();
+  _runAutocam(dt);
   renderer.render(scene, camera);
 }
 

@@ -42,6 +42,7 @@ const state = {
   phaseColorScheme: 'plasma',
   phaseColorMode:   'pitch',  // 'age' | 'pitch'
   phaseLines:       false,
+  phaseAutocam:     false,
   syncMeasure:      false,
   // midi-mode only
   allNotes:         [],
@@ -162,6 +163,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     onPhaseLines: () => {
       state.phaseLines = !state.phaseLines;
       return state.phaseLines;
+    },
+    onPhaseAutocam: () => {
+      state.phaseAutocam = !state.phaseAutocam;
+      return state.phaseAutocam;
     },
     onPhaseMode3d: () => {
       state.phaseMode3d = !state.phaseMode3d;
@@ -560,6 +565,7 @@ function startRaf() {
         phaseColorMode: state.phaseColorMode,
         noteHue,
         drawLines:      state.phaseLines,
+        autocam:        state.phaseAutocam,
       });
     } else {
       render(active, {
