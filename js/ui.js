@@ -50,6 +50,7 @@ export function setupUI({
   onPhaseColorScheme,
   onPhaseMode3d,
   onPhaseColorMode,
+  onPhaseAutoTau,
   onPhaseLines,
   onPhaseAutocam,
   onPhaseReset,
@@ -214,6 +215,14 @@ export function setupUI({
     const v = parseFloat(phaseTauSlider.value);
     phaseTauDisplay.textContent = `${v.toFixed(1)} ms`;
     onPhaseTauMs(v);
+  });
+
+  const btnAutoTau = document.getElementById('btn-phase-autotau');
+  btnAutoTau.addEventListener('click', () => {
+    const active = onPhaseAutoTau();
+    btnAutoTau.textContent = active ? 'Auto τ: ON' : 'Auto τ: OFF';
+    btnAutoTau.classList.toggle('active', active);
+    phaseTauSlider.disabled = active;
   });
 
   const phaseTrailSlider  = document.getElementById('phase-trail');
@@ -593,6 +602,11 @@ export function setupUI({
         el.textContent = `MIDI: ${names.join(', ')}`;
         el.className = 'midi-active';
       }
+    },
+    setPhaseTau(v) {
+      phaseTauSlider.value      = Math.max(parseFloat(phaseTauSlider.min),
+                                  Math.min(parseFloat(phaseTauSlider.max), v));
+      phaseTauDisplay.textContent = `${v.toFixed(1)} ms`;
     },
     setQwertyOctave(oct) {
       if (!qwertyActive) return;

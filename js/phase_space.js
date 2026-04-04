@@ -29,6 +29,39 @@ let overlayCanvas = null;
 let overlayCtx    = null;
 const _projVec    = new THREE.Vector3();  // reused scratch vector for projection
 
+// ── Auto-τ state ──────────────────────────────────────────────────────────────
+let autoTauMs  = 2.0;   // current smoothed estimate (exported via getter)
+let _acFrame   = 0;     // frame counter for throttling
+
+export function getAutoTauMs() { return autoTauMs; }
+
+// Find the first zero-crossing of the normalised autocorrelation R(τ).
+// For a pure sinusoid this equals T/4; for complex signals it gives the lag
+// at which s(t) and s(t+τ) are most decorrelated (Fraser-Swinney criterion).
+// Runs on the LP-filtered buffer, throttled to every 6 frames.
+function _computeAutoTau(sr) {
+  if (!filteredBuf || (++_acFrame % 6) !== 0) return;
+
+  const N      = filteredBuf.length;
+  const maxLag = Math.min(N >> 1, Math.round(0.025 * sr)); // search up to 25 ms
+
+  let r0 = 0;
+  for (let i = 0; i < N; i++) r0 += filteredBuf[i] * filteredBuf[i];
+  if (r0 < 1e-10) return;  // silence — keep current estimate
+
+  for (let lag = 1; lag <= maxLag; lag++) {
+    let r = 0;
+    const n = N - lag;
+    for (let i = 0; i < n; i++) r += filteredBuf[i] * filteredBuf[i + lag];
+    if (r <= 0) {
+      const tMs = Math.max(0.1, Math.min(20, lag / sr * 1000));
+      autoTauMs += 0.15 * (tMs - autoTauMs);  // ~6-frame exponential smoothing
+      return;
+    }
+  }
+  // No zero-crossing within 25 ms — very low frequency or DC; keep estimate.
+}
+
 // ── Autocam state ──────────────────────────────────────────────────────────────
 let autocamOn  = false;
 let autocamT   = 0;                          // seconds elapsed while autocam is on
@@ -375,6 +408,7 @@ export function update(analyserNode, params) {
 
   const {
     tauMs          = 2,
+    autoTau        = false,
     stride         = 8,
     trailSec       = 5,
     lpCutoffHz     = 5800,
@@ -386,11 +420,9 @@ export function update(analyserNode, params) {
     drawLines      = false,
   } = params;
 
-  const sr    = analyserNode.context.sampleRate;
-  const fsz   = analyserNode.fftSize;
-  const tau   = Math.max(1, Math.round(tauMs * sr / 1000));
-  const trail = Math.min(MAX_PTS, Math.round(trailSec * sr / stride));
-  const lpA   = 1 - Math.exp(-2 * Math.PI * lpCutoffHz / sr);
+  const sr  = analyserNode.context.sampleRate;
+  const fsz = analyserNode.fftSize;
+  const lpA = 1 - Math.exp(-2 * Math.PI * lpCutoffHz / sr);
 
   if (!filteredBuf || filteredBuf.length !== fsz) {
     filteredBuf = new Float32Array(fsz);
@@ -403,6 +435,12 @@ export function update(analyserNode, params) {
     lpState        = lpA * filteredBuf[i] + (1 - lpA) * lpState;
     filteredBuf[i] = lpState;
   }
+
+  // τ is computed after the LP filter so auto-τ operates on the filtered signal.
+  if (autoTau) _computeAutoTau(sr);
+  const effectiveTauMs = autoTau ? autoTauMs : tauMs;
+  const tau   = Math.max(1, Math.round(effectiveTauMs * sr / 1000));
+  const trail = Math.min(MAX_PTS, Math.round(trailSec * sr / stride));
 
   const newSamples = Math.min(Math.round(dt * sr), fsz - 2 * tau - 1);
   const startIdx   = Math.max(0, fsz - 2 * tau - newSamples);

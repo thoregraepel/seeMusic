@@ -41,6 +41,7 @@ const state = {
   phasePointSize:   2.5,
   phaseColorScheme: 'plasma',
   phaseColorMode:   'pitch',  // 'age' | 'pitch'
+  phaseAutoTau:     false,
   phaseLines:       false,
   phaseAutocam:     false,
   syncMeasure:      false,
@@ -159,6 +160,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     onPhaseColorMode: () => {
       state.phaseColorMode = state.phaseColorMode === 'age' ? 'pitch' : 'age';
       return state.phaseColorMode;
+    },
+    onPhaseAutoTau: () => {
+      state.phaseAutoTau = !state.phaseAutoTau;
+      return state.phaseAutoTau;
     },
     onPhaseLines: () => {
       state.phaseLines = !state.phaseLines;
@@ -554,8 +559,18 @@ function startRaf() {
         noteHue = ((Math.atan2(sinSum, cosSum) * 180 / Math.PI) + 360) % 360;
       }
 
+      // Read back the auto-τ estimate and sync slider display
+      if (state.phaseAutoTau) {
+        const v = phase.getAutoTauMs();
+        if (Math.abs(v - state.phaseTauMs) > 0.01) {
+          state.phaseTauMs = v;
+          ui.setPhaseTau(v);
+        }
+      }
+
       phase.update(analyser, {
         tauMs:          state.phaseTauMs,
+        autoTau:        state.phaseAutoTau,
         stride:         state.phaseStride,
         trailSec:       state.phaseTrailSec,
         lpCutoffHz:     state.phaseLpCutoff,
