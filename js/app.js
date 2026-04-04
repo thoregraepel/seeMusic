@@ -32,14 +32,14 @@ const state = {
   hueDirection:     1,     // +1 = CW ascending pitch, -1 = CCW
   tilt:             0,
   // phase-space embedding
-  phaseTauMs:       2,
-  phaseTrailSec:    5,
-  phaseStride:      8,
+  phaseTauMs:       0.1,
+  phaseTrailSec:    1,
+  phaseStride:      1,
   phaseLpCutoff:    5800,
   phaseMode3d:      true,
   phasePointSize:   2.5,
   phaseColorScheme: 'plasma',
-  phaseColorMode:   'age',    // 'age' | 'pitch'
+  phaseColorMode:   'pitch',  // 'age' | 'pitch'
   phaseLines:       false,
   syncMeasure:      false,
   // midi-mode only
