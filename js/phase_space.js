@@ -22,6 +22,7 @@ let writeHead   = 0;
 let activeCount = 0;
 let lpState     = 0;
 let prevNow     = null;
+let prevMode3d  = null;
 
 // ── GLSL ──────────────────────────────────────────────────────────────────────
 const VS = /* glsl */`
@@ -210,7 +211,7 @@ export function update(analyserNode, params) {
     const b = writeHead * 3;
     positions[b]     = filteredBuf[i];
     positions[b + 1] = filteredBuf[i + tau];
-    positions[b + 2] = mode3d ? filteredBuf[i + 2 * tau] : 0;
+    positions[b + 2] = filteredBuf[i + 2 * tau];
     hues[writeHead]  = noteHue;
     writeHead = (writeHead + 1) % MAX_PTS;
     if (activeCount < MAX_PTS) activeCount++;
@@ -227,6 +228,20 @@ export function update(analyserNode, params) {
   geo.attributes.position.needsUpdate = true;
   geo.attributes.aHue.needsUpdate     = true;
   geo.setDrawRange(0, activeCount);
+
+  if (mode3d !== prevMode3d) {
+    prevMode3d = mode3d;
+    if (mode3d) {
+      camera.position.set(1.8, 1.2, 1.8);
+      orbit.enableRotate = true;
+    } else {
+      camera.position.set(0, 0, 3.2);
+      orbit.enableRotate = false;
+    }
+    camera.lookAt(0, 0, 0);
+    orbit.target.set(0, 0, 0);
+    orbit.update();
+  }
 
   const cs = COLOR_SCHEMES[colorScheme] ?? COLOR_SCHEMES.plasma;
   const u  = mat.uniforms;
@@ -250,6 +265,7 @@ export function reset() {
   writeHead = activeCount = 0;
   lpState   = 0;
   prevNow   = null;
+  prevMode3d = null;
   if (positions) positions.fill(0);
   if (hues)      hues.fill(0);
   if (geo) {
@@ -268,5 +284,5 @@ export function destroy() {
   positions = hues = filteredBuf = null;
   writeHead = activeCount = 0;
   lpState = 0;
-  prevNow = null;
+  prevNow = prevMode3d = null;
 }
