@@ -41,6 +41,7 @@ export function setupUI({
   onKeyHueRotate,
   onKeyDirectionFlip,
   onKeyDefaults,
+  onQwertyToggle,
   onPhaseTauMs,
   onPhaseTrailSec,
   onPhaseStride,
@@ -386,6 +387,16 @@ export function setupUI({
     btnPiano.classList.toggle('active', active);
   });
 
+  let qwertyActive = false;
+
+  const btnKeys = document.getElementById('btn-keys');
+  btnKeys.addEventListener('click', () => {
+    const { enabled, octave } = onQwertyToggle();
+    qwertyActive = enabled;
+    btnKeys.textContent = enabled ? `Keys: C${octave}` : 'Keys: OFF';
+    btnKeys.classList.toggle('active', enabled);
+  });
+
   const btnLive = document.getElementById('btn-live');
   btnLive.addEventListener('click', async () => {
     const active = await onLiveMode();
@@ -437,7 +448,7 @@ export function setupUI({
     switch (e.code) {
       case 'Space': e.preventDefault(); btnPlay.click(); break;
       case 'KeyA':  btnAudio.click();      break;
-      case 'KeyV':  btnVisual.click();     break;
+      case 'KeyV':  if (!qwertyActive) btnVisual.click(); break;
       case 'KeyF':  btnFullscreen.click(); break;
 
       // 0 → circles
@@ -450,6 +461,7 @@ export function setupUI({
       // 1–9 → grid with N arms
       case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4':
       case 'Digit5': case 'Digit6': case 'Digit7': case 'Digit8': case 'Digit9': {
+        if (qwertyActive) break;
         e.preventDefault();
         const arms = Number(e.key);
         document.getElementById('render-mode-select').value = 'grid';
@@ -518,6 +530,7 @@ export function setupUI({
 
       // D → reset visual settings to defaults
       case 'KeyD': {
+        if (qwertyActive) break;
         e.preventDefault();
         const renderSel = document.getElementById('render-mode-select');
         sfSlider.value = 0;           sfDisplay.textContent = '1.00×';  onSfScale(1);
@@ -572,6 +585,10 @@ export function setupUI({
         el.textContent = `MIDI: ${names.join(', ')}`;
         el.className = 'midi-active';
       }
+    },
+    setQwertyOctave(oct) {
+      if (!qwertyActive) return;
+      btnKeys.textContent = `Keys: C${oct}`;
     },
     setLiveMode(active) {
       btnLive.textContent = active ? 'Live: ON' : 'Live: OFF';

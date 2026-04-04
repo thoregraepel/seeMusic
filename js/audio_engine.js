@@ -59,3 +59,13 @@ export function setMuted(muted) {
 
 export function getTime()  { return Tone.Transport.seconds; }
 export function getState() { return Tone.Transport.state;   }
+
+export function noteOn(midi, velocity = 0.8) {
+  if (!synth || audioMuted) return;
+  synth.triggerAttack(Tone.Frequency(midi, 'midi').toFrequency(), Tone.now(), velocity);
+}
+
+export function noteOff(midi) {
+  if (!synth) return;
+  synth.triggerRelease(Tone.Frequency(midi, 'midi').toFrequency(), Tone.now());
+}

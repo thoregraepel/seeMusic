@@ -10,6 +10,7 @@ import { setupUI } from './ui.js';
 import { initDial, pitchHue } from './color_dial.js';
 import * as phase from './phase_space.js';
 import { initMidiInput, clearNotes } from './midi_input.js';
+import * as qwerty from './qwerty_keyboard.js';
 import * as piano from './piano.js';
 import { BasicPitchTranscriber } from './basic_pitch.js';
 
@@ -61,6 +62,9 @@ const state = {
   // live MIDI keyboard
   liveMode:         false,      // true = use live MIDI input instead of scheduled file
   liveNotes:        [],         // [{midi, velocity}] from MIDI keyboard
+  // QWERTY piano keyboard
+  qwertyEnabled:    false,
+  qwertyNotes:      new Map(),  // midi → {midi, velocity}
   showPiano:        true,
   // audio + paired MIDI visualisation
   audioMidiNotes:   [],         // notes from a MIDI file paired with the current audio file
@@ -254,6 +258,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       ui.setColorMode(true);
       ui.setHyperbolic(false);
     },
+    onQwertyToggle: () => {
+      state.qwertyEnabled = !state.qwertyEnabled;
+      qwerty.setEnabled(state.qwertyEnabled);
+      return { enabled: state.qwertyEnabled, octave: qwerty.getBaseOctave() };
+    },
     onLiveMode: async () => {
       if (!state.liveMode) {
         try {
@@ -273,6 +282,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         return false;
       }
     },
+  });
+
+  // QWERTY piano keyboard
+  qwerty.init({
+    noteOn: (midi, vel) => {
+      if (state.audioReady) audio.noteOn(midi, vel);
+      state.qwertyNotes.set(midi, { midi, velocity: vel });
+    },
+    noteOff: (midi) => {
+      audio.noteOff(midi);
+      state.qwertyNotes.delete(midi);
+    },
+    octaveChange: (oct) => ui.setQwertyOctave(oct),
   });
 
   // Colour-wheel dial
@@ -488,6 +510,16 @@ function startRaf() {
       const tLook = (t + state.visualLeadMs / 1000) * state.tempoScale;
       pianoNotes = getActiveNotes(state.allNotes, tLook);
       active     = pianoNotes.filter(n => n.midi >= state.fftLowMidi && n.midi <= state.fftHighMidi);
+    }
+
+    // Merge QWERTY notes into active + pianoNotes
+    if (state.qwertyEnabled && state.qwertyNotes.size > 0) {
+      const activeMidi = new Set(active.map(n => n.midi));
+      const pianoMidi  = new Set(pianoNotes.map(n => n.midi));
+      for (const note of state.qwertyNotes.values()) {
+        if (!activeMidi.has(note.midi)) active.push(note);
+        if (!pianoMidi.has(note.midi))  pianoNotes.push(note);
+      }
     }
 
     if (state.duration > 0 && !state.liveMode) {
