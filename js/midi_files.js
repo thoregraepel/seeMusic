@@ -19,6 +19,7 @@ export const MIDI_FILES = [
   { name: 'I–vi–ii–V–I (test)',               type: 'generated', generator: 'cadence'        },
   { name: 'I–vi–ii–V–I with 7ths (test)',     type: 'generated', generator: 'cadence7'       },
   { name: 'Full Chromatic Sweep (test)',       type: 'generated', generator: 'sweep'          },
+  { name: 'All Intervals from C (demo)',       type: 'generated', generator: 'intervals'       },
 ];
 
 // ── Binary MIDI helpers ───────────────────────────────────────────────────────
@@ -180,6 +181,32 @@ function generateCadence7() {
   ], barLen, tpq, 80);
 }
 
+function generateIntervals() {
+  // Pattern for each of the 13 intervals (unison → octave):
+  //   1 beat:  C alone
+  //   2 beats: C + interval note together
+  const tpq    = 480;
+  const root   = 60;  // C4
+  const solo   = tpq;
+  const dyad   = tpq * 2;
+  const vel    = 90;
+  const events = [tempoEvent(72), keyEvent(0, 0)];
+
+  for (let i = 0; i <= 12; i++) {
+    const upper = root + i;
+    // Solo C
+    events.push(noteOn(root, vel));
+    events.push(noteOff(root, solo));
+    // Dyad: C + upper note
+    events.push(noteOn(root, vel));
+    if (i > 0) events.push(noteOn(upper, vel));
+    events.push(noteOff(root, dyad));
+    if (i > 0) events.push(noteOff(upper));
+  }
+
+  return buildMidi(events, tpq);
+}
+
 function generateSweep() {
   const tpq = 480;
   const noteDur = Math.round(tpq * 0.5); // eighth note at 120 BPM
@@ -205,6 +232,7 @@ export function generateMidi(type) {
     case 'cadence':    return generateCadence();
     case 'cadence7':   return generateCadence7();
     case 'sweep':      return generateSweep();
+    case 'intervals':  return generateIntervals();
     default: throw new Error(`Unknown generator: ${type}`);
   }
 }
