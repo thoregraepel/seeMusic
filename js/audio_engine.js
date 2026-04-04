@@ -60,12 +60,19 @@ export function setMuted(muted) {
 export function getTime()  { return Tone.Transport.seconds; }
 export function getState() { return Tone.Transport.state;   }
 
+const _heldFreqs = new Map(); // midi → freq string, so noteOff uses the exact same value
+
 export function noteOn(midi, velocity = 0.8) {
   if (!synth || audioMuted) return;
-  synth.triggerAttack(Tone.Frequency(midi, 'midi').toFrequency(), Tone.now(), velocity);
+  const freq = Tone.Frequency(midi, 'midi').toFrequency();
+  _heldFreqs.set(midi, freq);
+  synth.triggerAttack(freq, Tone.now(), velocity);
 }
 
 export function noteOff(midi) {
   if (!synth) return;
-  synth.triggerRelease(Tone.Frequency(midi, 'midi').toFrequency(), Tone.now());
+  const freq = _heldFreqs.get(midi);
+  if (freq === undefined) return;
+  _heldFreqs.delete(midi);
+  synth.triggerRelease(freq, Tone.now());
 }
