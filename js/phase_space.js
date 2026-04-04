@@ -1,14 +1,12 @@
 // phase_space.js — Takens delay-coordinate embedding visualiser.
 //
-// Each audio sample becomes a point  x = (s(t), s(t+τ), s(t+2τ))  in 3-D
-// space, accumulating a glowing trail that reveals the system's attractor.
+// Two render primitives (toggled at runtime, same geometry + shader):
+//   Points — glowing dot cloud
+//   Lines  — continuous trajectory polyline
 //
-// Two colour modes (switchable at runtime, zero re-upload cost):
-//   age   — monochrome: hue from uNew/uOld scheme, alpha from trail age.
-//   pitch — each point is coloured by the velocity-weighted circular mean
-//            of the active pitch classes at the moment it was written,
-//            using the same hue mapping as the grating/piano views.
-//            Alpha still encodes age, so the history fades naturally.
+// Two colour modes:
+//   age   — monochrome glow fading by trail age
+//   pitch — hue from velocity-weighted circular mean of active pitch classes
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -16,7 +14,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const MAX_PTS = 200_000;
 
 // ── Module state ───────────────────────────────────────────────────────────────
-let renderer, scene, camera, orbit, mat, mesh, geo;
+let renderer, scene, camera, orbit, mat, ptMesh, lineMesh, geo;
 let positions;    // Float32Array  MAX_PTS × 3
 let hues;         // Float32Array  MAX_PTS     — pitch-class hue per point
 let filteredBuf;
@@ -27,19 +25,18 @@ let prevNow     = null;
 
 // ── GLSL ──────────────────────────────────────────────────────────────────────
 const VS = /* glsl */`
-  attribute float aHue;     // pitch-class hue written at this point's birth [0, 360)
-  uniform float uHead;      // current ring-buffer write head
-  uniform float uTrail;     // trail length in slots
-  uniform float uSize;      // base point size in pixels
-  uniform float uPitchMode; // 0 = age colour, 1 = pitch colour
-  uniform vec3  uNew;       // newest colour  (age mode)
-  uniform vec3  uOld;       // oldest colour  (age mode)
+  attribute float aHue;
+  uniform float uHead;
+  uniform float uTrail;
+  uniform float uSize;
+  uniform float uPitchMode;
+  uniform vec3  uNew;
+  uniform vec3  uOld;
 
   varying float vAge;
   varying vec3  vCol;
 
-  // HSL → RGB with saturation = 1, lightness = 0.55.
-  // Baked constants: c = 0.9, m = 0.1.
+  // HSL → RGB  (s = 1, l = 0.55  →  c = 0.9, m = 0.1)
   vec3 hue2rgb(float h) {
     float hp = mod(h / 60.0, 6.0);
     float x  = 0.9 * (1.0 - abs(mod(hp, 2.0) - 1.0));
@@ -50,12 +47,14 @@ const VS = /* glsl */`
     else if (hp < 4.0) col = vec3(0.0, x,   0.9);
     else if (hp < 5.0) col = vec3(x,   0.0, 0.9);
     else               col = vec3(0.9, 0.0, x  );
-    return col + 0.1;   // m = l - c/2 = 0.55 - 0.45 = 0.1
+    return col + 0.1;
   }
 
   void main() {
     float idx = float(gl_VertexID);
-    float raw = mod(uHead - idx + ${MAX_PTS}.0, ${MAX_PTS}.0);
+    // + 1.0 ensures the ring-wrap slot always has age ≥ MAX_PTS+1 → fully faded,
+    // and the newest written point has age = 1 (not 0).
+    float raw = mod(uHead - idx + ${MAX_PTS}.0, ${MAX_PTS}.0) + 1.0;
     vAge = clamp(raw / uTrail, 0.0, 1.0);
 
     vCol = uPitchMode > 0.5
@@ -68,11 +67,15 @@ const VS = /* glsl */`
 `;
 
 const FS = /* glsl */`
+  uniform float uIsLines;   // 0 = points (apply disc clip), 1 = lines (skip it)
   varying float vAge;
   varying vec3  vCol;
 
   void main() {
-    if (dot(gl_PointCoord - 0.5, gl_PointCoord - 0.5) > 0.25) discard;
+    if (uIsLines < 0.5) {
+      // Circular sprite for point mode
+      if (dot(gl_PointCoord - 0.5, gl_PointCoord - 0.5) > 0.25) discard;
+    }
     float alpha  = pow(1.0 - vAge, 1.6);
     gl_FragColor = vec4(vCol * alpha, alpha);
   }
@@ -125,6 +128,7 @@ export function init(container) {
       uTrail:     { value: 5000 },
       uSize:      { value: 2.5 },
       uPitchMode: { value: 0 },
+      uIsLines:   { value: 0 },
       uNew:       { value: new THREE.Color('#ffffff') },
       uOld:       { value: new THREE.Color('#04083a') },
     },
@@ -133,8 +137,13 @@ export function init(container) {
     blending:    THREE.AdditiveBlending,
   });
 
-  mesh = new THREE.Points(geo, mat);
-  scene.add(mesh);
+  // Two meshes sharing the same geometry + material.
+  // Only one is visible at a time based on the drawLines param.
+  ptMesh   = new THREE.Points(geo, mat);
+  lineMesh = new THREE.Line(geo, mat);
+  lineMesh.visible = false;
+  scene.add(ptMesh);
+  scene.add(lineMesh);
 
   _applySize(container);
 }
@@ -160,15 +169,16 @@ export function update(analyserNode, params) {
   }
 
   const {
-    tauMs        = 2,
-    stride       = 8,
-    trailSec     = 5,
-    lpCutoffHz   = 5800,
-    mode3d       = true,
-    pointSize    = 2.5,
-    colorScheme  = 'plasma',
-    phaseColorMode = 'age',   // 'age' | 'pitch'
-    noteHue      = 0,         // velocity-weighted circular-mean hue of active notes
+    tauMs          = 2,
+    stride         = 8,
+    trailSec       = 5,
+    lpCutoffHz     = 5800,
+    mode3d         = true,
+    pointSize      = 2.5,
+    colorScheme    = 'plasma',
+    phaseColorMode = 'age',
+    noteHue        = 0,
+    drawLines      = false,
   } = params;
 
   const sr    = analyserNode.context.sampleRate;
@@ -206,6 +216,14 @@ export function update(analyserNode, params) {
     if (activeCount < MAX_PTS) activeCount++;
   }
 
+  // When the ring is full, mark the oldest slot (writeHead) as NaN so that
+  // THREE.Line discards the segment bridging newest → oldest (wrap boundary).
+  // The NaN is overwritten with real data on the next write to this slot.
+  if (activeCount === MAX_PTS) {
+    const nb = writeHead * 3;
+    positions[nb] = positions[nb + 1] = positions[nb + 2] = NaN;
+  }
+
   geo.attributes.position.needsUpdate = true;
   geo.attributes.aHue.needsUpdate     = true;
   geo.setDrawRange(0, activeCount);
@@ -216,8 +234,12 @@ export function update(analyserNode, params) {
   u.uTrail.value     = trail;
   u.uSize.value      = pointSize;
   u.uPitchMode.value = phaseColorMode === 'pitch' ? 1 : 0;
+  u.uIsLines.value   = drawLines ? 1 : 0;
   u.uNew.value.set(cs.newColor);
   u.uOld.value.set(cs.oldColor);
+
+  ptMesh.visible   = !drawLines;
+  lineMesh.visible =  drawLines;
 
   orbit.update();
   renderer.render(scene, camera);
@@ -242,7 +264,7 @@ export function destroy() {
   if (!renderer) return;
   renderer.dispose();
   renderer.domElement.remove();
-  renderer = scene = camera = orbit = mat = mesh = geo = null;
+  renderer = scene = camera = orbit = mat = ptMesh = lineMesh = geo = null;
   positions = hues = filteredBuf = null;
   writeHead = activeCount = 0;
   lpState = 0;

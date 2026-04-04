@@ -49,6 +49,7 @@ export function setupUI({
   onPhaseColorScheme,
   onPhaseMode3d,
   onPhaseColorMode,
+  onPhaseLines,
   onPhaseReset,
 }) {
   const fileSelect      = document.getElementById('file-select');
@@ -261,6 +262,13 @@ export function setupUI({
     const mode = onPhaseColorMode();
     btnPhaseColorMode.textContent = mode === 'pitch' ? 'Colors: Pitch' : 'Colors: Age';
     btnPhaseColorMode.classList.toggle('active', mode === 'pitch');
+  });
+
+  const btnPhaseLines = document.getElementById('btn-phase-lines');
+  btnPhaseLines.addEventListener('click', () => {
+    const active = onPhaseLines();
+    btnPhaseLines.textContent = active ? 'Lines: ON' : 'Lines: OFF';
+    btnPhaseLines.classList.toggle('active', active);
   });
 
   document.getElementById('btn-phase-reset').addEventListener('click', () => onPhaseReset());
