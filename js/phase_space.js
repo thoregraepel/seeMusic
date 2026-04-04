@@ -24,6 +24,11 @@ let lpState     = 0;
 let prevNow     = null;
 let prevMode3d  = null;
 
+// ── Overlay canvas (2D margin plots) ──────────────────────────────────────────
+let overlayCanvas = null;
+let overlayCtx    = null;
+const _projVec    = new THREE.Vector3();  // reused scratch vector for projection
+
 // ── Autocam state ──────────────────────────────────────────────────────────────
 let autocamOn  = false;
 let autocamT   = 0;                          // seconds elapsed while autocam is on
@@ -155,6 +160,15 @@ export function init(container) {
   scene.add(ptMesh);
   scene.add(lineMesh);
 
+  // Transparent overlay canvas for 2D margin waveforms
+  overlayCanvas = document.createElement('canvas');
+  Object.assign(overlayCanvas.style, {
+    position: 'absolute', top: '0', left: '0',
+    width: '100%', height: '100%', pointerEvents: 'none',
+  });
+  container.appendChild(overlayCanvas);
+  overlayCtx = overlayCanvas.getContext('2d');
+
   _applySize(container);
 }
 
@@ -166,6 +180,116 @@ function _applySize(container) {
   const h = container.clientHeight || container.parentElement?.clientHeight || 400;
   renderer.setSize(w, h, false);
   if (camera) { camera.aspect = w / h; camera.updateProjectionMatrix(); }
+  if (overlayCanvas) { overlayCanvas.width = w; overlayCanvas.height = h; }
+}
+
+// ── 2D margin overlay ─────────────────────────────────────────────────────────
+// Draws s(t) along the bottom and s(t+τ) along the left in 2D mode,
+// with dashed projection lines leading to the current phase-space point.
+function _drawOverlay(mode3d, tauSamples) {
+  if (!overlayCtx) return;
+  const W = overlayCanvas.width;
+  const H = overlayCanvas.height;
+  const ctx = overlayCtx;
+  ctx.clearRect(0, 0, W, H);
+  if (mode3d || !filteredBuf || activeCount === 0) return;
+
+  const STRIP = 52;   // strip thickness px
+  const PAD   = 5;    // amplitude headroom px
+  const fsz   = filteredBuf.length;
+  const usable = fsz - tauSamples;
+  if (usable < 2) return;
+
+  // Layout regions
+  const bL = STRIP, bT = H - STRIP, bW = W - STRIP, bH = STRIP;  // bottom
+  const lL = 0,     lT = 0,         lW = STRIP,      lH = H - STRIP; // left
+
+  // Semi-transparent strip backgrounds
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(lL, lT, lW, lH);
+  ctx.fillRect(0,  bT, W,  STRIP);   // full-width bottom (covers corner too)
+
+  // ── Bottom strip: s(t) — time left→right ──────────────────────────────────
+  ctx.strokeStyle = 'rgba(70,170,255,0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < fsz; i++) {
+    const x = bL + (i / (fsz - 1)) * bW;
+    const y = bT + bH * 0.5 - filteredBuf[i] * (bH * 0.5 - PAD);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // ── Left strip: s(t+τ) — time top→bottom ──────────────────────────────────
+  ctx.strokeStyle = 'rgba(255,130,60,0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < usable; i++) {
+    const y = lT + (i / (usable - 1)) * lH;
+    const x = lL + lW * 0.5 + filteredBuf[i + tauSamples] * (lW * 0.5 - PAD);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // ── Cursor: the sample pair that produced the most recent phase point ──────
+  const curIdx = Math.min(fsz - 2 * tauSamples - 1, usable - 1);
+  if (curIdx < 0) return;
+
+  const curBX = bL + (curIdx / (fsz - 1)) * bW;
+  const curBY = bT + bH * 0.5 - filteredBuf[curIdx] * (bH * 0.5 - PAD);
+
+  const curLY = lT + (curIdx / (usable - 1)) * lH;
+  const curLX = lL + lW * 0.5 + filteredBuf[curIdx + tauSamples] * (lW * 0.5 - PAD);
+
+  // ── Project newest phase point → screen coords ────────────────────────────
+  const phIdx = ((writeHead - 1) + MAX_PTS) % MAX_PTS;
+  const phB   = phIdx * 3;
+  if (!isFinite(positions[phB])) return;
+
+  _projVec.set(positions[phB], positions[phB + 1], positions[phB + 2]);
+  _projVec.project(camera);
+  const phSX = (_projVec.x + 1) * 0.5 * W;
+  const phSY = (1 - _projVec.y) * 0.5 * H;
+
+  // ── Dashed projection lines ────────────────────────────────────────────────
+  ctx.save();
+  ctx.setLineDash([5, 5]);
+  ctx.lineWidth = 1;
+
+  ctx.strokeStyle = 'rgba(70,170,255,0.5)';   // blue: s(t) → x axis
+  ctx.beginPath(); ctx.moveTo(curBX, bT); ctx.lineTo(phSX, phSY); ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255,130,60,0.5)';   // orange: s(t+τ) → y axis
+  ctx.beginPath(); ctx.moveTo(lW, curLY); ctx.lineTo(phSX, phSY); ctx.stroke();
+
+  ctx.restore();
+
+  // ── Cursor dots ──────────────────────────────────────────────────────────
+  ctx.fillStyle = 'rgba(70,170,255,1)';
+  ctx.beginPath(); ctx.arc(curBX, curBY, 4, 0, Math.PI * 2); ctx.fill();
+
+  ctx.fillStyle = 'rgba(255,130,60,1)';
+  ctx.beginPath(); ctx.arc(curLX, curLY, 4, 0, Math.PI * 2); ctx.fill();
+
+  // Current phase point: bright white ring
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(phSX, phSY, 5, 0, Math.PI * 2); ctx.stroke();
+
+  // ── Labels ────────────────────────────────────────────────────────────────
+  ctx.font = '11px monospace';
+  ctx.textBaseline = 'bottom';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(70,170,255,0.8)';
+  ctx.fillText('s(t)', bL + bW * 0.5, H - 2);
+
+  ctx.fillStyle = 'rgba(255,130,60,0.8)';
+  ctx.save();
+  ctx.translate(11, lH * 0.5);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textBaseline = 'middle';
+  ctx.fillText('s(t+τ)', 0, 0);
+  ctx.restore();
 }
 
 // ── Autocam ───────────────────────────────────────────────────────────────────
@@ -245,6 +369,7 @@ export function update(analyserNode, params) {
     orbit.update();
     _runAutocam(dt);
     renderer.render(scene, camera);
+    if (overlayCtx) overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
     return;
   }
 
@@ -335,6 +460,7 @@ export function update(analyserNode, params) {
   orbit.update();
   _runAutocam(dt);
   renderer.render(scene, camera);
+  _drawOverlay(mode3d, tau);
 }
 
 // ── Reset ─────────────────────────────────────────────────────────────────────
@@ -357,6 +483,7 @@ export function destroy() {
   if (!renderer) return;
   renderer.dispose();
   renderer.domElement.remove();
+  if (overlayCanvas) { overlayCanvas.remove(); overlayCanvas = overlayCtx = null; }
   renderer = scene = camera = orbit = mat = ptMesh = lineMesh = geo = null;
   positions = hues = filteredBuf = null;
   writeHead = activeCount = 0;
