@@ -30,36 +30,51 @@ let overlayCtx    = null;
 const _projVec    = new THREE.Vector3();  // reused scratch vector for projection
 
 // ── Auto-τ state ──────────────────────────────────────────────────────────────
-let autoTauMs  = 2.0;   // current smoothed estimate (exported via getter)
-let _acFrame   = 0;     // frame counter for throttling
+let autoTauMs  = 2.0;   // τ₁ smoothed estimate
+let autoTau2Ms = 4.0;   // τ₂ smoothed estimate
+let _acFrame   = 0;
 
-export function getAutoTauMs() { return autoTauMs; }
+const ACF_N    = 200;
+const acfCurve = new Float32Array(ACF_N);  // R(τ) normalised values for display
+let   acfMaxMs = 0;   // lag in ms at k = ACF_N-1 (x-axis span)
+let   acfT1Ms  = 0;   // detected τ₁ (ms) for marker
+let   acfT2Ms  = 0;   // detected τ₂ (ms) for marker
 
-// Find the first zero-crossing of the normalised autocorrelation R(τ).
-// For a pure sinusoid this equals T/4; for complex signals it gives the lag
-// at which s(t) and s(t+τ) are most decorrelated (Fraser-Swinney criterion).
-// Runs on the LP-filtered buffer, throttled to every 6 frames.
-function _computeAutoTau(sr) {
+export function getAutoTauMs() { return { tau1: autoTauMs, tau2: autoTau2Ms }; }
+
+// Compute normalised ACF R(τ) over ACF_N linearly-spaced lags up to 25 ms.
+// Finds first pos→neg zero-crossing (τ₁, Fraser-Swinney criterion) and first
+// neg→pos zero-crossing (τ₂ ≈ 3T/4 for a sinusoid).  Stores curve + markers
+// for overlay display.  Only advances the smoothed estimates when applyAutoTau=true.
+function _computeAcf(sr, applyAutoTau) {
   if (!filteredBuf || (++_acFrame % 6) !== 0) return;
-
   const N      = filteredBuf.length;
-  const maxLag = Math.min(N >> 1, Math.round(0.025 * sr)); // search up to 25 ms
-
+  const maxLag = Math.min(N >> 1, Math.round(0.025 * sr));
+  acfMaxMs     = maxLag / sr * 1000;
   let r0 = 0;
   for (let i = 0; i < N; i++) r0 += filteredBuf[i] * filteredBuf[i];
-  if (r0 < 1e-10) return;  // silence — keep current estimate
-
-  for (let lag = 1; lag <= maxLag; lag++) {
+  if (r0 < 1e-10) return;
+  let foundFirst = false, t1Ms = -1, t2Ms = -1, prevR = 1.0;
+  for (let k = 0; k < ACF_N; k++) {
+    const lag = Math.max(1, Math.round((k + 1) / ACF_N * maxLag));
     let r = 0;
-    const n = N - lag;
-    for (let i = 0; i < n; i++) r += filteredBuf[i] * filteredBuf[i + lag];
-    if (r <= 0) {
-      const tMs = Math.max(0.1, Math.min(20, lag / sr * 1000));
-      autoTauMs += 0.15 * (tMs - autoTauMs);  // ~6-frame exponential smoothing
-      return;
-    }
+    for (let i = 0; i + lag < N; i++) r += filteredBuf[i] * filteredBuf[i + lag];
+    r /= r0;
+    acfCurve[k] = r;
+    const lagMs = lag / sr * 1000;
+    if (!foundFirst && prevR > 0 && r <= 0) { t1Ms = lagMs; foundFirst = true; }
+    else if (foundFirst && t2Ms < 0 && prevR < 0 && r >= 0) { t2Ms = lagMs; }
+    prevR = r;
   }
-  // No zero-crossing within 25 ms — very low frequency or DC; keep estimate.
+  if (t1Ms > 0) {
+    acfT1Ms = Math.max(0.1, Math.min(20, t1Ms));
+    if (applyAutoTau) autoTauMs += 0.15 * (acfT1Ms - autoTauMs);
+  }
+  const t2 = t2Ms > 0
+    ? Math.max(0.1, Math.min(20, t2Ms))
+    : (acfT1Ms > 0 ? Math.min(20, acfT1Ms * 3) : autoTau2Ms);
+  acfT2Ms = t2;
+  if (applyAutoTau) autoTau2Ms += 0.15 * (t2 - autoTau2Ms);
 }
 
 // ── Autocam state ──────────────────────────────────────────────────────────────
@@ -219,7 +234,7 @@ function _applySize(container) {
 // ── 2D margin overlay ─────────────────────────────────────────────────────────
 // Draws s(t) along the bottom and s(t+τ) along the left in 2D mode,
 // with dashed projection lines leading to the current phase-space point.
-function _drawOverlay(mode3d, tauSamples) {
+function _drawOverlay(mode3d, tauSamples, tau2Samples) {
   if (!overlayCtx) return;
   const W = overlayCanvas.width;
   const H = overlayCanvas.height;
@@ -265,7 +280,7 @@ function _drawOverlay(mode3d, tauSamples) {
   ctx.stroke();
 
   // ── Cursor: the sample pair that produced the most recent phase point ──────
-  const curIdx = Math.min(fsz - 2 * tauSamples - 1, usable - 1);
+  const curIdx = Math.min(fsz - Math.max(tauSamples, tau2Samples) - 1, usable - 1);
   if (curIdx < 0) return;
 
   const curBX = bL + (curIdx / (fsz - 1)) * bW;
@@ -323,6 +338,86 @@ function _drawOverlay(mode3d, tauSamples) {
   ctx.textBaseline = 'middle';
   ctx.fillText('s(t+τ)', 0, 0);
   ctx.restore();
+}
+
+// ── ACF inset ─────────────────────────────────────────────────────────────────
+// Draws the normalised autocorrelation curve as a small inset in the top-right
+// corner, always visible while in phase mode.  Dashed vertical markers show
+// the automatically detected τ₁ (blue) and τ₂ (orange) zero-crossings.
+function _drawAcf() {
+  if (!overlayCtx || acfMaxMs === 0) return;
+  const W   = overlayCanvas.width;
+  const ctx = overlayCtx;
+
+  const IW = 180, IH = 80;   // inset size px
+  const IL = W - IW - 8;     // inset left edge
+  const IT = 8;               // inset top edge
+  const midY = IT + IH * 0.5;
+
+  // Background + border
+  ctx.fillStyle = 'rgba(0,0,10,0.72)';
+  ctx.fillRect(IL, IT, IW, IH);
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 0.5;
+  ctx.setLineDash([]);
+  ctx.strokeRect(IL, IT, IW, IH);
+
+  // Zero line
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(IL, midY); ctx.lineTo(IL + IW, midY); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // ACF curve
+  ctx.strokeStyle = 'rgba(150,200,255,0.9)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (let k = 0; k < ACF_N; k++) {
+    const x = IL + (k / (ACF_N - 1)) * IW;
+    const y = midY - acfCurve[k] * (IH * 0.45);
+    k === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // τ₁ marker (blue dashed vertical)
+  if (acfT1Ms > 0) {
+    const x1 = IL + Math.min(1, acfT1Ms / acfMaxMs) * IW;
+    ctx.strokeStyle = 'rgba(70,170,255,0.85)';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(x1, IT); ctx.lineTo(x1, IT + IH); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(70,170,255,0.9)';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('τ₁', x1, IT + 2);
+  }
+
+  // τ₂ marker (orange dashed vertical)
+  if (acfT2Ms > 0) {
+    const x2 = IL + Math.min(1, acfT2Ms / acfMaxMs) * IW;
+    ctx.strokeStyle = 'rgba(255,150,60,0.85)';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(x2, IT); ctx.lineTo(x2, IT + IH); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,150,60,0.9)';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('τ₂', x2, IT + 2);
+  }
+
+  // Axis labels
+  ctx.fillStyle = 'rgba(180,180,180,0.65)';
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('ACF', IL + 3, IT + IH - 2);
+  ctx.textAlign = 'right';
+  ctx.fillText(`${acfMaxMs.toFixed(0)} ms`, IL + IW - 2, IT + IH - 2);
 }
 
 // ── Autocam ───────────────────────────────────────────────────────────────────
@@ -408,6 +503,7 @@ export function update(analyserNode, params) {
 
   const {
     tauMs          = 2,
+    tau2Ms         = 4,
     autoTau        = false,
     stride         = 8,
     trailSec       = 5,
@@ -436,21 +532,24 @@ export function update(analyserNode, params) {
     filteredBuf[i] = lpState;
   }
 
-  // τ is computed after the LP filter so auto-τ operates on the filtered signal.
-  if (autoTau) _computeAutoTau(sr);
-  const effectiveTauMs = autoTau ? autoTauMs : tauMs;
-  const tau   = Math.max(1, Math.round(effectiveTauMs * sr / 1000));
+  // Always compute ACF (for display + marker detection); apply auto-τ only when enabled.
+  _computeAcf(sr, autoTau);
+  const effectiveTau1Ms = autoTau ? autoTauMs  : tauMs;
+  const effectiveTau2Ms = autoTau ? autoTau2Ms : tau2Ms;
+  const tau  = Math.max(1, Math.round(effectiveTau1Ms * sr / 1000));
+  const tau2 = Math.max(1, Math.round(effectiveTau2Ms * sr / 1000));
   const trail = Math.min(MAX_PTS, Math.round(trailSec * sr / stride));
 
-  const newSamples = Math.min(Math.round(dt * sr), fsz - 2 * tau - 1);
-  const startIdx   = Math.max(0, fsz - 2 * tau - newSamples);
-  const endIdx     = fsz - 2 * tau;
+  const maxTau     = Math.max(tau, tau2);
+  const newSamples = Math.min(Math.round(dt * sr), fsz - maxTau - 1);
+  const startIdx   = Math.max(0, fsz - maxTau - newSamples);
+  const endIdx     = fsz - maxTau;
 
   for (let i = startIdx; i < endIdx; i += stride) {
     const b = writeHead * 3;
     positions[b]     = filteredBuf[i];
     positions[b + 1] = filteredBuf[i + tau];
-    positions[b + 2] = filteredBuf[i + 2 * tau];
+    positions[b + 2] = filteredBuf[i + tau2];
     hues[writeHead]  = noteHue;
     writeHead = (writeHead + 1) % MAX_PTS;
     if (activeCount < MAX_PTS) activeCount++;
@@ -498,7 +597,8 @@ export function update(analyserNode, params) {
   orbit.update();
   _runAutocam(dt);
   renderer.render(scene, camera);
-  _drawOverlay(mode3d, tau);
+  _drawOverlay(mode3d, tau, tau2);
+  _drawAcf();
 }
 
 // ── Reset ─────────────────────────────────────────────────────────────────────

@@ -34,6 +34,7 @@ const state = {
   tilt:             0,
   // phase-space embedding
   phaseTauMs:       0.1,
+  phaseTau2Ms:      4.0,
   phaseTrailSec:    1,
   phaseStride:      1,
   phaseLpCutoff:    5800,
@@ -152,6 +153,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     },
     onPhaseTauMs:       v => { state.phaseTauMs       = v; },
+    onPhaseTau2Ms:      v => { state.phaseTau2Ms      = v; },
     onPhaseTrailSec:    v => { state.phaseTrailSec    = v; },
     onPhaseStride:      v => { state.phaseStride      = v; },
     onPhaseLpCutoff:    v => { state.phaseLpCutoff    = v; },
@@ -276,7 +278,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     onLiveMode: async () => {
       if (!state.liveMode) {
         try {
-          const names = await initMidiInput(notes => { state.liveNotes = notes; });
+          const prevMidi = new Set();
+          const names = await initMidiInput(notes => {
+            state.liveNotes = notes;
+            // Sync audio engine so the analyser has a waveform for phase viz
+            const curMidi = new Set(notes.map(n => n.midi));
+            for (const n of notes) {
+              if (!prevMidi.has(n.midi)) audio.noteOn(n.midi, n.velocity);
+            }
+            for (const m of prevMidi) {
+              if (!curMidi.has(m)) audio.noteOff(m);
+            }
+            prevMidi.clear();
+            for (const m of curMidi) prevMidi.add(m);
+          });
           state.liveMode = true;
           ui.setMidiStatus(names);
           return true;
@@ -285,6 +300,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           return false;
         }
       } else {
+        // Release any synth notes triggered by the external MIDI device
+        for (const n of state.liveNotes) audio.noteOff(n.midi);
         state.liveMode = false;
         clearNotes();
         state.liveNotes = [];
@@ -559,17 +576,22 @@ function startRaf() {
         noteHue = ((Math.atan2(sinSum, cosSum) * 180 / Math.PI) + 360) % 360;
       }
 
-      // Read back the auto-τ estimate and sync slider display
+      // Read back the auto-τ estimates and sync slider displays
       if (state.phaseAutoTau) {
-        const v = phase.getAutoTauMs();
-        if (Math.abs(v - state.phaseTauMs) > 0.01) {
-          state.phaseTauMs = v;
-          ui.setPhaseTau(v);
+        const v = phase.getAutoTauMs();  // { tau1, tau2 }
+        if (Math.abs(v.tau1 - state.phaseTauMs) > 0.01) {
+          state.phaseTauMs = v.tau1;
+          ui.setPhaseTau(v.tau1);
+        }
+        if (Math.abs(v.tau2 - state.phaseTau2Ms) > 0.01) {
+          state.phaseTau2Ms = v.tau2;
+          ui.setPhaseTau2(v.tau2);
         }
       }
 
       phase.update(analyser, {
         tauMs:          state.phaseTauMs,
+        tau2Ms:         state.phaseTau2Ms,
         autoTau:        state.phaseAutoTau,
         stride:         state.phaseStride,
         trailSec:       state.phaseTrailSec,

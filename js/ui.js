@@ -43,6 +43,7 @@ export function setupUI({
   onKeyDefaults,
   onQwertyToggle,
   onPhaseTauMs,
+  onPhaseTau2Ms,
   onPhaseTrailSec,
   onPhaseStride,
   onPhaseLpCutoff,
@@ -217,12 +218,21 @@ export function setupUI({
     onPhaseTauMs(v);
   });
 
+  const phaseTau2Slider  = document.getElementById('phase-tau2');
+  const phaseTau2Display = document.getElementById('phase-tau2-display');
+  phaseTau2Slider.addEventListener('input', () => {
+    const v = parseFloat(phaseTau2Slider.value);
+    phaseTau2Display.textContent = `${v.toFixed(1)} ms`;
+    onPhaseTau2Ms(v);
+  });
+
   const btnAutoTau = document.getElementById('btn-phase-autotau');
   btnAutoTau.addEventListener('click', () => {
     const active = onPhaseAutoTau();
     btnAutoTau.textContent = active ? 'Auto τ: ON' : 'Auto τ: OFF';
     btnAutoTau.classList.toggle('active', active);
-    phaseTauSlider.disabled = active;
+    phaseTauSlider.disabled  = active;
+    phaseTau2Slider.disabled = active;
   });
 
   const phaseTrailSlider  = document.getElementById('phase-trail');
@@ -607,6 +617,11 @@ export function setupUI({
       phaseTauSlider.value      = Math.max(parseFloat(phaseTauSlider.min),
                                   Math.min(parseFloat(phaseTauSlider.max), v));
       phaseTauDisplay.textContent = `${v.toFixed(1)} ms`;
+    },
+    setPhaseTau2(v) {
+      phaseTau2Slider.value      = Math.max(parseFloat(phaseTau2Slider.min),
+                                   Math.min(parseFloat(phaseTau2Slider.max), v));
+      phaseTau2Display.textContent = `${v.toFixed(1)} ms`;
     },
     setQwertyOctave(oct) {
       if (!qwertyActive) return;
