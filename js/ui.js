@@ -46,7 +46,7 @@ export function setupUI({
   onPhaseTau2Ms,
   onPhaseTrailSec,
   onPhaseStride,
-  onPhaseLpCutoff,
+  onPhaseLpAlpha,
   onPhasePointSize,
   onPhaseColorScheme,
   onPhaseMode3d,
@@ -54,6 +54,8 @@ export function setupUI({
   onPhaseAutoTau,
   onPhaseLines,
   onPhaseAutocam,
+  onSynthPlayback,
+  onPhaseSynthSource,
   onPhaseReset,
 }) {
   const fileSelect      = document.getElementById('file-select');
@@ -254,9 +256,9 @@ export function setupUI({
   const phaseLpSlider  = document.getElementById('phase-lp');
   const phaseLpDisplay = document.getElementById('phase-lp-display');
   phaseLpSlider.addEventListener('input', () => {
-    const hz = Math.round(Math.pow(2, parseFloat(phaseLpSlider.value)));
-    phaseLpDisplay.textContent = hz >= 1000 ? `${(hz / 1000).toFixed(1)} kHz` : `${hz} Hz`;
-    onPhaseLpCutoff(hz);
+    const v = parseFloat(phaseLpSlider.value);
+    phaseLpDisplay.textContent = `α=${v.toFixed(1)}`;
+    onPhaseLpAlpha(v);
   });
 
   const phaseSizeSlider  = document.getElementById('phase-size');
@@ -297,6 +299,20 @@ export function setupUI({
     const active = onPhaseAutocam();
     btnAutocam.textContent = active ? 'Autocam: ON' : 'Autocam: OFF';
     btnAutocam.classList.toggle('active', active);
+  });
+
+  const btnSynthPlay = document.getElementById('btn-synth-playback');
+  btnSynthPlay.addEventListener('click', async () => {
+    const active = await onSynthPlayback();
+    btnSynthPlay.textContent = active ? 'Hear: Synth' : 'Hear: Audio';
+    btnSynthPlay.classList.toggle('active', active);
+  });
+
+  const btnPhaseSource = document.getElementById('btn-phase-source');
+  btnPhaseSource.addEventListener('click', async () => {
+    const active = await onPhaseSynthSource();
+    btnPhaseSource.textContent = active ? 'Phase: Synth' : 'Phase: Audio';
+    btnPhaseSource.classList.toggle('active', active);
   });
 
   document.getElementById('btn-phase-reset').addEventListener('click', () => onPhaseReset());
@@ -622,6 +638,12 @@ export function setupUI({
       phaseTau2Slider.value      = Math.max(parseFloat(phaseTau2Slider.min),
                                    Math.min(parseFloat(phaseTau2Slider.max), v));
       phaseTau2Display.textContent = `${v.toFixed(1)} ms`;
+    },
+    setLpCutoffDisplay(hz) {
+      if (!hz || !isFinite(hz)) return;
+      const alpha = parseFloat(phaseLpSlider.value);
+      const txt = hz >= 1000 ? `${(hz / 1000).toFixed(1)}k` : `${Math.round(hz)}`;
+      phaseLpDisplay.textContent = `α=${alpha.toFixed(1)} → ${txt}Hz`;
     },
     setQwertyOctave(oct) {
       if (!qwertyActive) return;

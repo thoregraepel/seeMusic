@@ -24,6 +24,14 @@ let lpState     = 0;
 let prevNow     = null;
 let prevMode3d  = null;
 
+// ── Compressor-style amplitude normalization ──────────────────────────────────
+// Moderate attack / very slow release — adapts to different sources over a few
+// seconds but preserves musical dynamics (crescendi, diminuendi, fades).
+let refRms      = 0;      // smoothed reference RMS for normalization
+const ATK_RATE  = 0.02;   // adapts upward in ~3 s at 60 fps
+const REL_RATE  = 0.0003; // decays over ~50 s — fades collapse beautifully
+const RMS_FLOOR = 1e-6;   // avoid division by zero during silence
+
 // ── Overlay canvas (2D margin plots) ──────────────────────────────────────────
 let overlayCanvas = null;
 let overlayCtx    = null;
@@ -41,6 +49,9 @@ let   acfT1Ms  = 0;   // detected τ₁ (ms) for marker
 let   acfT2Ms  = 0;   // detected τ₂ (ms) for marker
 
 export function getAutoTauMs() { return { tau1: autoTauMs, tau2: autoTau2Ms }; }
+
+let effectiveLpHz = 5800;   // last computed LP cutoff (for UI readback)
+export function getEffectiveLpHz() { return effectiveLpHz; }
 
 // Compute normalised ACF R(τ) over ACF_N linearly-spaced lags up to 25 ms.
 // Finds first pos→neg zero-crossing (τ₁, Fraser-Swinney criterion) and first
@@ -450,9 +461,10 @@ function _runAutocam(dt) {
   _acTgt.lerp(_acTmp.set(cx, cy, cz), 0.02);
 
   // Adapt distance so the attractor fills ~80 % of the frame.
-  const spread     = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 0.1) * 0.5;
+  // Gentle tracking preserves the visual distinction between loud and quiet passages.
+  const spread     = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 0.05) * 0.5;
   const fovRad     = camera.fov * Math.PI / 180;
-  const wantedDist = Math.max(1.2, Math.min(7, (spread / Math.tan(fovRad / 2)) * 1.25));
+  const wantedDist = Math.max(0.8, Math.min(10, (spread / Math.tan(fovRad / 2)) * 1.25));
   acDist += (wantedDist - acDist) * 0.005;
 
   // Lissajous sphere path: irrational frequency ratio means path never exactly repeats.
@@ -507,7 +519,7 @@ export function update(analyserNode, params) {
     autoTau        = false,
     stride         = 8,
     trailSec       = 5,
-    lpCutoffHz     = 5800,
+    lpAlpha        = 1.5,
     mode3d         = true,
     pointSize      = 2.5,
     colorScheme    = 'plasma',
@@ -518,7 +530,6 @@ export function update(analyserNode, params) {
 
   const sr  = analyserNode.context.sampleRate;
   const fsz = analyserNode.fftSize;
-  const lpA = 1 - Math.exp(-2 * Math.PI * lpCutoffHz / sr);
 
   if (!filteredBuf || filteredBuf.length !== fsz) {
     filteredBuf = new Float32Array(fsz);
@@ -526,16 +537,37 @@ export function update(analyserNode, params) {
     prevNow = null;
   }
 
+  // Always compute ACF first (on previous frame's filtered buffer) so τ₁ is
+  // available for the LP cutoff derivation.  On the very first frame the ACF
+  // operates on the zeroed buffer — harmless.
+  _computeAcf(sr, autoTau);
+  const effectiveTau1Ms = autoTau ? autoTauMs  : tauMs;
+  const effectiveTau2Ms = autoTau ? autoTau2Ms : tau2Ms;
+
+  // Derive LP cutoff from α and τ₁:  f_cutoff = α / (2τ₁)
+  // Clamp to [20 Hz, sr/2] for sanity.
+  const tau1Sec    = effectiveTau1Ms * 0.001;
+  const lpCutoffHz = Math.max(20, Math.min(sr * 0.5, lpAlpha / (2 * tau1Sec)));
+  effectiveLpHz    = lpCutoffHz;
+  const lpA        = 1 - Math.exp(-2 * Math.PI * lpCutoffHz / sr);
+
   analyserNode.getFloatTimeDomainData(filteredBuf);
   for (let i = 0; i < fsz; i++) {
     lpState        = lpA * filteredBuf[i] + (1 - lpA) * lpState;
     filteredBuf[i] = lpState;
   }
 
-  // Always compute ACF (for display + marker detection); apply auto-τ only when enabled.
-  _computeAcf(sr, autoTau);
-  const effectiveTau1Ms = autoTau ? autoTauMs  : tauMs;
-  const effectiveTau2Ms = autoTau ? autoTau2Ms : tau2Ms;
+  // Compressor-style normalization: fast attack, slow release.
+  // Measures instantaneous RMS, updates the reference level asymmetrically,
+  // then scales the buffer.  Fades collapse naturally because refRms holds
+  // near its recent peak while the signal drops.
+  let sumSq = 0;
+  for (let i = 0; i < fsz; i++) sumSq += filteredBuf[i] * filteredBuf[i];
+  const rms = Math.sqrt(sumSq / fsz);
+  refRms += (rms > refRms ? ATK_RATE : REL_RATE) * (rms - refRms);
+  const gain = 1.0 / Math.max(refRms, RMS_FLOOR);
+  for (let i = 0; i < fsz; i++) filteredBuf[i] *= gain;
+
   const tau  = Math.max(1, Math.round(effectiveTau1Ms * sr / 1000));
   const tau2 = Math.max(1, Math.round(effectiveTau2Ms * sr / 1000));
   const trail = Math.min(MAX_PTS, Math.round(trailSec * sr / stride));
@@ -605,6 +637,7 @@ export function update(analyserNode, params) {
 export function reset() {
   writeHead = activeCount = 0;
   lpState   = 0;
+  refRms    = 0;
   prevNow   = null;
   prevMode3d = null;
   if (positions) positions.fill(0);

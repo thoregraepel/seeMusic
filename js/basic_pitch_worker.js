@@ -93,7 +93,7 @@ self.onmessage = async ({ data }) => {
 
     const notes = timed.map(n => ({
       midi:     n.pitchMidi,
-      velocity: Math.round((n.amplitude ?? 0.8) * 127),
+      velocity: Math.min(1, n.amplitude ?? 0.8),
       time:     n.startTimeSeconds,
       duration: n.durationSeconds,
     }));

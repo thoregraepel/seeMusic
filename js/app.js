@@ -37,14 +37,16 @@ const state = {
   phaseTau2Ms:      4.0,
   phaseTrailSec:    1,
   phaseStride:      1,
-  phaseLpCutoff:    5800,
+  phaseLpAlpha:     1.5,
   phaseMode3d:      true,
   phasePointSize:   2.5,
   phaseColorScheme: 'plasma',
   phaseColorMode:   'pitch',  // 'age' | 'pitch'
-  phaseAutoTau:     false,
+  phaseAutoTau:     true,
   phaseLines:       false,
-  phaseAutocam:     false,
+  phaseAutocam:     true,
+  synthPlayback:    false,   // true = hear synth instead of original audio
+  phaseSynthSource: false,   // true = phase trajectory from synth analyser
   syncMeasure:      false,
   // midi-mode only
   allNotes:         [],
@@ -77,6 +79,9 @@ const state = {
 // FFT analyser state (initialised once an audio file is loaded)
 let fftNoteRanges = null;
 let fftFreqBuf    = null;
+
+// Tracks which MIDI notes the synth is currently playing for synthPlayback/phaseSynthSource.
+const _synthHeld = new Set();
 
 // ── Sync measurement ──────────────────────────────────────────────────────────
 const syncRenders = [];
@@ -132,8 +137,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     onSeek:      handleSeek,
     onAudioToggle: () => {
       state.showAudio = !state.showAudio;
-      if (state.inputMode === 'audio' || state.inputMode === 'mic') mp3.setMuted(!state.showAudio);
-      else audio.setMuted(!state.showAudio);
+      if (state.inputMode === 'audio' || state.inputMode === 'mic') {
+        // Mute whichever source is active
+        if (state.synthPlayback) audio.setSynthSpeakerMuted(!state.showAudio);
+        else mp3.setMuted(!state.showAudio);
+      } else {
+        audio.setMuted(!state.showAudio);
+      }
       return state.showAudio;
     },
     onVisualToggle: () => { state.showVisual = !state.showVisual; return state.showVisual; },
@@ -156,7 +166,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     onPhaseTau2Ms:      v => { state.phaseTau2Ms      = v; },
     onPhaseTrailSec:    v => { state.phaseTrailSec    = v; },
     onPhaseStride:      v => { state.phaseStride      = v; },
-    onPhaseLpCutoff:    v => { state.phaseLpCutoff    = v; },
+    onPhaseLpAlpha:     v => { state.phaseLpAlpha     = v; },
     onPhasePointSize:   v => { state.phasePointSize   = v; },
     onPhaseColorScheme: v => { state.phaseColorScheme = v; },
     onPhaseColorMode: () => {
@@ -179,6 +189,32 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.phaseMode3d = !state.phaseMode3d;
       phase.reset();
       return state.phaseMode3d;
+    },
+    onSynthPlayback: async () => {
+      state.synthPlayback = !state.synthPlayback;
+      await audio.initAudio();
+      if (state.synthPlayback) {
+        mp3.setMuted(true);
+        audio.setSynthSpeakerMuted(!state.showAudio ? true : false);
+      } else {
+        mp3.setMuted(!state.showAudio);
+        audio.setSynthSpeakerMuted(true);
+        if (!state.phaseSynthSource) {
+          for (const m of _synthHeld) audio.noteOff(m);
+          _synthHeld.clear();
+        }
+      }
+      return state.synthPlayback;
+    },
+    onPhaseSynthSource: async () => {
+      state.phaseSynthSource = !state.phaseSynthSource;
+      await audio.initAudio();
+      if (!state.phaseSynthSource && !state.synthPlayback) {
+        for (const m of _synthHeld) audio.noteOff(m);
+        _synthHeld.clear();
+      }
+      phase.reset();
+      return state.phaseSynthSource;
     },
     onPhaseReset: () => phase.reset(),
     onGridArms:  v => { state.gridArms  = v; },
@@ -558,16 +594,50 @@ function startRaf() {
 
     const syncT0 = state.syncMeasure ? performance.now() : 0;
     if (state.renderMode === 'phase') {
-      const analyser = (state.inputMode === 'audio' || state.inputMode === 'mic')
-        ? mp3.getAnalyserNode()
-        : audio.getAnalyserNode();
+      // Drive the synth from active MIDI notes when needed for playback or
+      // phase visualisation.
+      const needSynth = (state.synthPlayback || state.phaseSynthSource)
+        && state.audioMidiMode && state.inputMode === 'audio';
+      if (needSynth) {
+        const curMidi = new Set(active.map(n => n.midi));
+        for (const n of active) {
+          if (!_synthHeld.has(n.midi)) audio.noteOn(n.midi, n.velocity);
+        }
+        for (const m of _synthHeld) {
+          if (!curMidi.has(m)) audio.noteOff(m);
+        }
+        _synthHeld.clear();
+        for (const m of curMidi) _synthHeld.add(m);
+      } else if (_synthHeld.size > 0) {
+        for (const m of _synthHeld) audio.noteOff(m);
+        _synthHeld.clear();
+      }
+
+      // Choose which analyser feeds the phase trajectory.
+      const useSynthAnalyser = state.phaseSynthSource
+        && state.audioMidiMode && state.inputMode === 'audio';
+      const analyser = useSynthAnalyser
+        ? audio.getAnalyserNode()
+        : (state.inputMode === 'audio' || state.inputMode === 'mic')
+          ? mp3.getAnalyserNode()
+          : audio.getAnalyserNode();
 
       // Velocity-weighted circular mean of active pitch-class hues.
-      // Using circular mean (sin/cos) handles the wraparound at 0°/360°.
+      // When live mode is on but active is empty (no MIDI keys pressed),
+      // fall back to FFT note detection from the phase analyser.
+      let phaseActive = active;
+      if (phaseActive.length === 0 && analyser && fftNoteRanges && fftFreqBuf) {
+        let notes = applyThreshold(
+          getRawNoteLevels(analyser, fftNoteRanges, fftFreqBuf),
+          state.fftThreshold, state.fftThresholdTilt,
+        );
+        notes = notes.filter(n => n.midi >= state.fftLowMidi && n.midi <= state.fftHighMidi);
+        phaseActive = notes.slice(0, state.fftTopN);
+      }
       let noteHue = 0;
-      if (active.length > 0) {
+      if (phaseActive.length > 0) {
         let sinSum = 0, cosSum = 0;
-        for (const n of active) {
+        for (const n of phaseActive) {
           const h = pitchHue(n.midi, state.hueOffset, state.hueDirection) * Math.PI / 180;
           const v = n.velocity ?? 1;
           sinSum += Math.sin(h) * v;
@@ -589,13 +659,16 @@ function startRaf() {
         }
       }
 
+      // Sync effective LP cutoff display (derived from α and τ₁)
+      ui.setLpCutoffDisplay(phase.getEffectiveLpHz());
+
       phase.update(analyser, {
         tauMs:          state.phaseTauMs,
         tau2Ms:         state.phaseTau2Ms,
         autoTau:        state.phaseAutoTau,
         stride:         state.phaseStride,
         trailSec:       state.phaseTrailSec,
-        lpCutoffHz:     state.phaseLpCutoff,
+        lpAlpha:        state.phaseLpAlpha,
         mode3d:         state.phaseMode3d,
         pointSize:      state.phasePointSize,
         colorScheme:    state.phaseColorScheme,

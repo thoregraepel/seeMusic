@@ -3,6 +3,7 @@
 
 let synth      = null;
 let analyser   = null;
+let synthGain  = null;   // gain node between synth and speakers
 let audioMuted = false;
 
 export async function initAudio() {
@@ -14,13 +15,16 @@ export async function initAudio() {
     analyser.fftSize               = 8192;
     analyser.smoothingTimeConstant = 0;
 
+    // Route synth → analyser (always gets signal) and
+    //        synth → synthGain → destination (can be muted independently).
+    synthGain = new Tone.Gain(1).toDestination();
+
     synth = new Tone.PolySynth(Tone.Synth, {
       maxPolyphony: 64,
       oscillator: { type: 'triangle' },
       envelope: { attack: 0.02, decay: 0.05, sustain: 0.85, release: 0.4 },
-    }).toDestination();
+    }).connect(synthGain);
 
-    // Fan the synth output into the analyser (does not affect playback routing).
     synth.connect(analyser);
   }
 }
@@ -33,7 +37,7 @@ export function scheduleNotes(allNotes) {
 
   for (const note of allNotes) {
     Tone.Transport.schedule((audioTime) => {
-      if (!audioMuted && synth) {
+      if (synth) {
         const freq = Tone.Frequency(note.midi, 'midi').toFrequency();
         synth.triggerAttackRelease(freq, note.duration, audioTime, note.velocity);
       }
@@ -55,6 +59,13 @@ export function seek(seconds) {
 
 export function setMuted(muted) {
   audioMuted = muted;
+  if (synthGain) synthGain.gain.value = muted ? 0 : 1;
+}
+
+// Mute synth speaker output independently.
+// Unlike setMuted, this does NOT affect noteOn — synth still drives the analyser.
+export function setSynthSpeakerMuted(muted) {
+  if (synthGain) synthGain.gain.value = muted ? 0 : 1;
 }
 
 export function getTime()  { return Tone.Transport.seconds; }
@@ -63,7 +74,7 @@ export function getState() { return Tone.Transport.state;   }
 const _heldFreqs = new Map(); // midi → freq string, so noteOff uses the exact same value
 
 export function noteOn(midi, velocity = 0.8) {
-  if (!synth || audioMuted) return;
+  if (!synth) return;
   const freq = Tone.Frequency(midi, 'midi').toFrequency();
   _heldFreqs.set(midi, freq);
   synth.triggerAttack(freq, Tone.now(), velocity);

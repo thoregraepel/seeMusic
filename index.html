@@ -74,7 +74,7 @@
         <li><strong>τ delay</strong> — time gap between coordinates. The optimal value is roughly one quarter of the dominant period (~1–5 ms for music). Too small collapses everything onto the diagonal; too large gives random scatter.</li>
         <li><strong>Trail</strong> — seconds of trajectory to accumulate. Longer trails reveal the full attractor; shorter trails show only recent dynamics.</li>
         <li><strong>Stride</strong> — samples skipped between points. Higher values give a coarser but faster portrait.</li>
-        <li><strong>LP cutoff</strong> — low-pass filter applied before embedding. Lower values smooth the trajectory and emphasise slow dynamics; higher values preserve fine harmonic structure.</li>
+        <li><strong>α (LP)</strong> — richness parameter that couples the LP cutoff to τ₁ via f<sub>cutoff</sub> = α/(2τ₁). α=1 is strict Nyquist for the embedding (cleanest attractor); higher values keep more harmonics at the cost of some aliasing.</li>
         <li><strong>Pt size</strong> — pixel size per point. With additive blending, dense attractor regions automatically appear brighter — no explicit density estimation needed.</li>
         <li><strong>3D / 2D</strong> — toggle between the full 3-D embedding and a flat 2-D projection onto the XY plane.</li>
         <li><strong>Reset trail</strong> — clears the accumulated portrait and starts fresh.</li>
@@ -260,15 +260,15 @@
         <span class="section-label phase-label">PHASE</span>
         <div class="ctrl-group" data-tip="First embedding delay τ₁ — x→y coordinate gap. Fraser-Swinney criterion: first zero-crossing of the autocorrelation, where s(t) and s(t+τ₁) are most decorrelated.">
           <label for="phase-tau">τ₁</label>
-          <input type="range" id="phase-tau" min="0.1" max="20" step="0.1" value="0.1">
+          <input type="range" id="phase-tau" min="0.1" max="20" step="0.1" value="0.1" disabled>
           <span id="phase-tau-display">0.1 ms</span>
         </div>
         <div class="ctrl-group" data-tip="Second embedding delay τ₂ — x→z coordinate gap. Generalised Takens embedding: independent from τ₁, letting each axis capture a different timescale. Auto-τ sets this to the second zero-crossing (≈ 3T/4).">
           <label for="phase-tau2">τ₂</label>
-          <input type="range" id="phase-tau2" min="0.1" max="20" step="0.1" value="4">
+          <input type="range" id="phase-tau2" min="0.1" max="20" step="0.1" value="4" disabled>
           <span id="phase-tau2-display">4.0 ms</span>
         </div>
-        <button id="btn-phase-autotau" class="toggle" data-tip="Auto-τ: tunes τ₁ and τ₂ from the ACF zero-crossings displayed in the inset — τ₁ at first pos→neg crossing, τ₂ at first neg→pos crossing.">Auto τ: OFF</button>
+        <button id="btn-phase-autotau" class="toggle active" data-tip="Auto-τ: tunes τ₁ and τ₂ from the ACF zero-crossings displayed in the inset — τ₁ at first pos→neg crossing, τ₂ at first neg→pos crossing.">Auto τ: ON</button>
         <div class="ctrl-group" data-tip="Seconds of trajectory to accumulate. Longer trails build up the full attractor shape; shorter trails show only recent motion.">
           <label for="phase-trail">Trail</label>
           <input type="range" id="phase-trail" min="0.5" max="15" step="0.5" value="1">
@@ -279,10 +279,10 @@
           <input type="range" id="phase-stride" min="1" max="32" step="1" value="1">
           <span id="phase-stride-display">1</span>
         </div>
-        <div class="ctrl-group" data-tip="Low-pass filter cutoff before embedding. Lower values smooth the signal and emphasise slow dynamics; higher values preserve fine harmonic detail.">
-          <label for="phase-lp">LP cutoff</label>
-          <input type="range" id="phase-lp" min="7" max="14.4" step="0.05" value="12.5">
-          <span id="phase-lp-display">5.8 kHz</span>
+        <div class="ctrl-group" data-tip="Richness α — controls LP cutoff jointly with τ₁ via f_cutoff = α/(2τ₁). α=1: strict Nyquist (cleanest attractor). α=2: keeps ~4 harmonics. α=3: rich detail. The effective cutoff is shown.">
+          <label for="phase-lp">α (LP)</label>
+          <input type="range" id="phase-lp" min="0.5" max="4" step="0.1" value="1.5">
+          <span id="phase-lp-display">α=1.5</span>
         </div>
         <div class="ctrl-group" data-tip="Base pixel size of each point. With additive blending, dense attractor regions automatically appear brighter.">
           <label for="phase-size">Pt size</label>
@@ -302,7 +302,9 @@
         <button id="btn-phase-3d" class="toggle active" data-tip="3D uses generalised embedding (s(t), s(t+τ₁), s(t+τ₂)) with independent delays. 2D projects to the XY plane — easier to read but hides one dimension.">3D: ON</button>
         <button id="btn-phase-color-mode" class="toggle active" data-tip="Age: monochrome glow fading by trail age. Pitch: each point coloured by the active pitch class at the moment it was drawn, using the same hue scheme as the rest of the app.">Colors: Pitch</button>
         <button id="btn-phase-lines" class="toggle" data-tip="Connect consecutive trajectory points with lines for a continuous orbit instead of dots.">Lines: OFF</button>
-        <button id="btn-phase-autocam" class="toggle" data-tip="Autocam: Lissajous sphere orbit with adaptive framing — camera continuously moves to reveal the full 3D attractor structure.">Autocam: OFF</button>
+        <button id="btn-phase-autocam" class="toggle active" data-tip="Autocam: Lissajous sphere orbit with adaptive framing — camera continuously moves to reveal the full 3D attractor structure.">Autocam: ON</button>
+        <button id="btn-synth-playback" class="toggle" data-tip="Switch audio output between the original file and the MIDI-driven synth. Only active when a transcribed/paired MIDI track is available.">Hear: Audio</button>
+        <button id="btn-phase-source" class="toggle" data-tip="Switch which signal drives the phase-space trajectory: the original audio file or the MIDI-driven synth. Independent of what you hear.">Phase: Audio</button>
         <button id="btn-phase-reset" data-tip="Clear the accumulated trail and start fresh">Reset trail</button>
       </div>
 
